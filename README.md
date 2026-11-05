@@ -27,11 +27,26 @@ js/fishing.js              낚시 미니게임
 js/store.js                인증글 저장 (클라우드 / 로컬)
 js/exif.js                 사진 EXIF 읽기, 사진 축소
 js/data.js                 라인·포인트·어종·아바타 옵션
+js/config.js               Supabase 연결 키 (비워두면 로컬 저장)
+js/supa.js                 Supabase 저장 방식
+supabase/schema.sql        Supabase 표·권한·사진 저장소 설정 SQL
 netlify/functions/catches.mjs   인증글 API (Netlify Blobs 저장)
 ```
 
+## 무료 배포: GitHub Pages + Supabase (추천)
+
+1. **Supabase 프로젝트 만들기**: [supabase.com](https://supabase.com) → New project (지역은 Seoul 추천)
+2. **표 만들기**: Supabase → SQL Editor → `supabase/schema.sql` 내용을 붙여넣고 **Run**
+3. **키 넣기**: Project Settings → API 의 **Project URL** 과 **anon public 키**를 `js/config.js` 에 입력
+   (service_role 키는 절대 넣지 마세요)
+4. **GitHub Pages 켜기**: 저장소 Settings → Pages → Source: Deploy from a branch → `main` / `(root)` → Save
+5. `https://<아이디>.github.io/online-surflure/` 접속 → HUD에 **"실시간 공유"** 가 보이면 완료
+
+> 누구나 로그인 없이 글·댓글을 쓸 수 있는 구조라, 부적절한 글은 Supabase → Table Editor 에서 지우면 됩니다.
+
 ## 저장 방식
 
+- **`js/config.js` 에 Supabase 키가 있으면 "실시간 공유" 모드**: 글·사진·댓글이 Supabase에 저장되고, 새 깃발·댓글이 실시간으로 반영됩니다.
 - **Netlify에 배포하면 "실시간 공유" 모드**: `netlify/functions/catches.mjs` 가 Netlify Blobs에 글·사진·댓글을 저장하고, 모든 방문자가 같은 해변을 봅니다. 15초마다 새 깃발을 불러옵니다.
 - **그 밖의 경우(로컬 실행, GitHub Pages 등) "로컬 저장" 모드**: 이 브라우저의 localStorage에만 저장됩니다.
 - 실제 글이 라인별로 4개 미만이면 해변이 비어 보이지 않게 **"예시"** 깃발을 보여줍니다(저장되지 않음).
