@@ -699,8 +699,9 @@ store.on(() => {
 });
 store.init().then((mode) => {
   const p = $('#hud-store');
-  p.textContent = mode === 'cloud' ? '실시간 공유' : '로컬 저장';
-  p.classList.toggle('cloud', mode === 'cloud');
-  p.title = mode === 'cloud' ? '모든 방문자와 인증글이 공유됩니다 (15초마다 갱신)' : '서버가 없어 이 브라우저에만 저장됩니다';
+  const shared = mode === 'cloud' || mode === 'supabase';
+  p.textContent = shared ? '실시간 공유' : '로컬 저장';
+  p.classList.toggle('cloud', shared);
+  p.title = shared ? '모든 방문자와 인증글이 공유됩니다' : '서버가 연결되지 않아 이 브라우저에만 저장됩니다';
 });
 requestAnimationFrame(frame);

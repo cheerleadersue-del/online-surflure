@@ -1,7 +1,9 @@
-// 조과 인증글 저장소
-// 1) Netlify Functions(/api/catches)가 있으면 모두가 공유하는 클라우드 모드
-// 2) 없으면(로컬 실행·GitHub Pages 등) 이 브라우저의 localStorage에 저장하는 로컬 모드
+// 조과 인증글 저장소 (우선순위 순)
+// 1) js/config.js 에 Supabase 키가 있으면 Supabase (GitHub Pages에서도 모두가 공유, 실시간)
+// 2) Netlify Functions(/api/catches)가 있으면 Netlify 클라우드
+// 3) 둘 다 없으면 이 브라우저의 localStorage에 저장하는 로컬 모드
 import { rng, hashStr } from './scene.js';
+import { SupaBackend, supaConfigured } from './supa.js';
 
 const API = '/api/catches';
 const LS_KEY = 'surflure.catches.v1';
@@ -20,6 +22,18 @@ export class Store {
   emit() { this.listeners.forEach((fn) => fn(this.items)); }
 
   async init() {
+    if (supaConfigured()) {
+      try {
+        this.supa = new SupaBackend();
+        this.items = await this.supa.init(() => this.refresh());
+        this.mode = 'supabase';
+        this.emit();
+        setInterval(() => this.refresh(), 60000);
+        return this.mode;
+      } catch (e) {
+        console.warn('Supabase 연결 실패, 로컬 저장으로 전환합니다:', e);
+      }
+    }
     try {
       const res = await fetch(API, { headers: { accept: 'application/json' } });
       const ct = res.headers.get('content-type') || '';
@@ -50,7 +64,9 @@ export class Store {
   }
 
   async refresh() {
-    if (this.mode === 'cloud') {
+    if (this.mode === 'supabase') {
+      try { this.items = await this.supa.list(); } catch (_) { return; }
+    } else if (this.mode === 'cloud') {
       try {
         const res = await fetch(API, { headers: { accept: 'application/json' } });
         if (res.ok) this.items = (await res.json()).items || [];
@@ -64,6 +80,12 @@ export class Store {
   get(id) { return this.items.find((x) => x.id === id); }
 
   async add(report) {
+    if (this.mode === 'supabase') {
+      const item = await this.supa.add(report);
+      this.items = [item, ...this.items.filter((x) => x.id !== item.id)];
+      this.emit();
+      return item;
+    }
     if (this.mode === 'cloud') {
       const res = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(report) });
       const data = await res.json().catch(() => ({}));
@@ -81,6 +103,11 @@ export class Store {
   }
 
   async comment(id, author, text) {
+    if (this.mode === 'supabase') {
+      const item = await this.supa.comment(id, author, text);
+      this.replace(item);
+      return item;
+    }
     if (this.mode === 'cloud') {
       const res = await fetch(`${API}/${encodeURIComponent(id)}/comments`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ author, text }),
@@ -101,6 +128,11 @@ export class Store {
   }
 
   async like(id) {
+    if (this.mode === 'supabase') {
+      const item = await this.supa.like(id);
+      this.replace(item);
+      return item;
+    }
     if (this.mode === 'cloud') {
       const res = await fetch(`${API}/${encodeURIComponent(id)}/like`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
