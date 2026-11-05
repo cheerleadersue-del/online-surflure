@@ -24,7 +24,7 @@ async function dataUrlToBlob(dataUrl) {
 
 export class SupaBackend {
   async init(onChange) {
-    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
+    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm');
     this.db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
     const items = await this.list();
     // 실시간: 누군가 글·댓글·좋아요를 남기면 바로 갱신
