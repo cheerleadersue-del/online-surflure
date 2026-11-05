@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f2a44">
+  <title>온라인 서프루어낚시</title>
+  <meta name="description" content="소나무숲길을 지나 바다로. 아바타로 서프루어·원투·찌낚시를 즐기고, 실제 조과를 사진으로 인증해 정보를 나누는 온라인 바다.">
+  <meta property="og:title" content="온라인 서프루어낚시">
+  <meta property="og:description" content="동해·서해 라인을 골라 바다로 입장하세요. 인증 깃발에서 실시간 조과 정보를 확인할 수 있어요.">
+  <meta property="og:locale" content="ko_KR">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="world" aria-label="바다 장면"></canvas>
+
+  <!-- ── 입장 화면 ── -->
+  <section id="entry" class="entry">
+    <div class="entry-card">
+      <header class="brand">
+        <span class="brand-mark">〰️🎣</span>
+        <h1>온라인 서프루어낚시</h1>
+        <p>소나무 숲길을 지나 모래를 밟고, 오늘의 포인트로.</p>
+      </header>
+
+      <div class="step" id="step-line">
+        <h2><span class="num">1</span> 어느 바다로 갈까요?</h2>
+        <div class="line-cards">
+          <button class="line-card east" data-line="east" type="button">
+            <strong>동해라인</strong>
+            <span>맑고 깊은 물 · 일출 · 광어·삼치·황어</span>
+          </button>
+          <button class="line-card west" data-line="west" type="button">
+            <strong>서해라인</strong>
+            <span>넓은 백사장 · 노을 · 광어·농어·우럭</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="step" id="step-avatar">
+        <h2><span class="num">2</span> 나의 낚시꾼</h2>
+        <div class="avatar-grid">
+          <canvas id="avatar-preview" width="200" height="240" aria-label="아바타 미리보기"></canvas>
+          <div class="avatar-opts">
+            <label class="field">
+              <span>아이디</span>
+              <input id="av-name" maxlength="12" placeholder="직접 입력하거나 아래에서 고르세요" autocomplete="nickname">
+            </label>
+            <div class="chips" id="name-ideas"></div>
+            <div class="opt-row"><span>모자</span><div class="seg" id="opt-hat"></div></div>
+            <div class="opt-row"><span>모자색</span><div class="swatches" id="opt-hatColor"></div></div>
+            <div class="opt-row"><span>재킷</span><div class="swatches" id="opt-jacket"></div></div>
+            <div class="opt-row"><span>하의</span><div class="seg" id="opt-pants"></div></div>
+            <div class="opt-row"><span>하의색</span><div class="swatches" id="opt-pantsColor"></div></div>
+            <label class="opt-row check"><input type="checkbox" id="opt-vest" checked> <span>구명조끼 착용</span></label>
+          </div>
+        </div>
+      </div>
+
+      <button id="enter-btn" class="btn-primary big" type="button" disabled>바다로 입장하기 🌊</button>
+      <p class="fine">🔊 소리를 켜면 숲의 바람, 모래 밟는 소리, 파도 소리가 들려요. (이어폰 추천)</p>
+    </div>
+  </section>
+
+  <!-- ── 게임 HUD ── -->
+  <div id="hud" class="hud" hidden>
+    <div class="hud-info">
+      <div class="hud-line" id="hud-line">동해라인</div>
+      <div class="hud-zone" id="hud-zone">소나무 숲길</div>
+      <div class="hud-meta">
+        <span id="hud-time">--:--</span>
+        <span id="hud-temp">수온 --°C</span>
+        <span id="hud-store" class="pill">로컬</span>
+      </div>
+      <select id="time-mode" aria-label="시간대">
+        <option value="real">🕒 실제 시간</option>
+        <option value="5.8">🌅 새벽</option>
+        <option value="9">☀️ 아침</option>
+        <option value="13">🌞 낮</option>
+        <option value="18.6">🌇 해질녘</option>
+        <option value="22">🌙 밤</option>
+      </select>
+    </div>
+
+    <nav class="hud-actions">
+      <button id="btn-write" class="btn-primary" type="button">📸 조과 인증하기</button>
+      <button id="btn-board" type="button">📋 조과 게시판</button>
+      <button id="btn-creel" type="button">🐟 내 어망 <b id="creel-count">0</b></button>
+      <button id="btn-sound" type="button" aria-pressed="true">🔊</button>
+      <button id="btn-home" type="button" title="처음으로">🏠</button>
+    </nav>
+
+    <div class="minimap" id="minimap" aria-label="미니맵: 눌러서 이동"></div>
+
+    <div class="zone-banner" id="zone-banner"><strong></strong><span></span></div>
+    <div class="toast" id="toast"></div>
+
+    <div class="walk-pad" id="walk-pad">
+      <button data-dir="-1" type="button" aria-label="왼쪽으로 걷기">◀</button>
+      <span class="walk-hint" id="walk-hint">← → 키 또는 버튼으로 걸어요</span>
+      <button data-dir="1" type="button" aria-label="오른쪽으로 걷기">▶</button>
+    </div>
+
+    <div class="fish-panel" id="fish-panel" hidden>
+      <div class="method-tabs" id="method-tabs">
+        <button data-m="lure" class="on" type="button">🎣 서프루어</button>
+        <button data-m="far" type="button">🔔 원투</button>
+        <button data-m="float" type="button">🚤 찌낚시(배)</button>
+      </div>
+      <p class="fish-msg" id="fish-msg">해변에서 바다를 향해 캐스팅해 보세요.</p>
+      <div class="gauges">
+        <div class="gauge" id="g-power"><span>캐스팅 힘</span><i></i></div>
+        <div class="gauge tension" id="g-tension" hidden><span>라인 텐션</span><i></i></div>
+      </div>
+      <div class="fish-btns">
+        <button id="fish-sub" type="button" hidden>회수</button>
+        <button id="fish-main" class="btn-primary" type="button">캐스팅</button>
+        <button id="boat-btn" type="button" hidden>🚤 배 타기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 모달: 상세 ── -->
+  <dialog id="dlg-detail" class="dlg wide">
+    <form method="dialog" class="dlg-close"><button aria-label="닫기">✕</button></form>
+    <div class="detail">
+      <div class="detail-photo"><img id="d-photo" alt=""></div>
+      <div class="detail-body">
+        <p class="tag-row" id="d-tags"></p>
+        <h2 id="d-title"></h2>
+        <p class="by" id="d-by"></p>
+        <dl class="meta" id="d-meta"></dl>
+        <div class="story" id="d-story"></div>
+        <div class="detail-actions">
+          <button id="d-like" type="button">👍 좋아요 <b></b></button>
+          <a id="d-map" target="_blank" rel="noopener">🗺️ 지도에서 보기</a>
+        </div>
+        <section class="comments">
+          <h3>댓글 <b id="d-ccount">0</b></h3>
+          <ul id="d-comments"></ul>
+          <form id="d-cform" class="cform">
+            <input id="d-ctext" maxlength="500" placeholder="댓글을 남겨주세요 (예: 몇 시 물때였나요?)" required>
+            <button class="btn-primary">등록</button>
+          </form>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ── 모달: 인증글 쓰기 ── -->
+  <dialog id="dlg-write" class="dlg wide">
+    <form method="dialog" class="dlg-close"><button aria-label="닫기">✕</button></form>
+    <h2 class="dlg-title">📸 실제 조과 인증하기</h2>
+    <p class="dlg-sub">실제 바다에서 잡은 물고기를 사진으로 인증하세요. 등록하면 해변에 깃발이 꽂혀요.</p>
+    <div class="write-grid">
+      <form id="write-form" class="write-form">
+        <label class="photo-drop" id="photo-drop">
+          <input type="file" id="w-photo" accept="image/*" required>
+          <img id="w-photo-prev" alt="" hidden>
+          <span id="w-photo-txt">📷 사진 선택 (필수)<small>촬영 시각·위치 정보가 있으면 자동으로 채워져요</small></span>
+        </label>
+        <fieldset class="row2">
+          <label class="field"><span>라인</span>
+            <select id="w-line"><option value="east">동해라인</option><option value="west">서해라인</option></select></label>
+          <label class="field"><span>낚시 방법</span>
+            <select id="w-method"><option value="lure">서프루어</option><option value="far">원투</option><option value="float">찌낚시(배)</option><option value="etc">기타</option></select></label>
+        </fieldset>
+        <label class="field"><span>장소 *</span>
+          <input id="w-spot" list="spot-list" maxlength="60" required placeholder="예) 양양 하조대 남쪽 백사장"><datalist id="spot-list"></datalist></label>
+        <fieldset class="row2">
+          <label class="field"><span>위도</span><input id="w-lat" inputmode="decimal" placeholder="선택"></label>
+          <label class="field"><span>경도</span><input id="w-lng" inputmode="decimal" placeholder="선택"></label>
+        </fieldset>
+        <fieldset class="row2">
+          <label class="field"><span>잡은 시각</span><input id="w-time" type="datetime-local" required></label>
+          <label class="field"><span>시간대</span><input id="w-slot" readonly></label>
+        </fieldset>
+        <fieldset class="row3">
+          <label class="field"><span>어종 *</span><input id="w-species" list="species-list" maxlength="30" required><datalist id="species-list"></datalist></label>
+          <label class="field"><span>크기(cm)</span><input id="w-size" type="number" min="0" max="300" step="0.5"></label>
+          <label class="field"><span>마릿수</span><input id="w-count" type="number" min="1" max="999" value="1"></label>
+        </fieldset>
+        <label class="field"><span>미끼 / 루어</span><input id="w-bait" list="bait-list" maxlength="60" placeholder="예) 메탈지그 30g 핑크"><datalist id="bait-list"></datalist></label>
+        <fieldset class="row3">
+          <label class="field"><span>로드</span><input id="w-rod" maxlength="60" placeholder="서프로드 10ft"></label>
+          <label class="field"><span>릴</span><input id="w-reel" maxlength="60" placeholder="스피닝 4000번"></label>
+          <label class="field"><span>라인</span><input id="w-linespec" maxlength="60" placeholder="합사 1.2호"></label>
+        </fieldset>
+        <fieldset class="row3">
+          <label class="field"><span>수온(°C)</span><input id="w-temp" type="number" step="0.1" min="-5" max="40"></label>
+          <label class="field"><span>물때</span><select id="w-tide"></select></label>
+          <label class="field"><span>날씨</span><select id="w-weather"></select></label>
+        </fieldset>
+        <label class="field"><span>어떻게 잡았나요?</span>
+          <textarea id="w-story" rows="4" maxlength="2000" placeholder="포인트 특징, 캐스팅 거리, 액션, 입질 패턴 등을 나눠주세요"></textarea></label>
+        <p class="form-err" id="w-err" role="alert"></p>
+        <button class="btn-primary big" id="w-submit">🚩 깃발 꽂기 (등록)</button>
+      </form>
+      <aside class="live-preview">
+        <h3>실시간 미리보기</h3>
+        <div class="card" id="w-preview"></div>
+      </aside>
+    </div>
+  </dialog>
+
+  <!-- ── 모달: 게시판 ── -->
+  <dialog id="dlg-board" class="dlg wide">
+    <form method="dialog" class="dlg-close"><button aria-label="닫기">✕</button></form>
+    <h2 class="dlg-title">📋 조과 게시판</h2>
+    <div class="board-filters">
+      <select id="b-line"><option value="">전체 라인</option><option value="east">동해라인</option><option value="west">서해라인</option></select>
+      <select id="b-method"><option value="">모든 방법</option><option value="lure">서프루어</option><option value="far">원투</option><option value="float">찌낚시(배)</option><option value="etc">기타</option></select>
+      <input id="b-q" placeholder="어종·장소·미끼 검색">
+    </div>
+    <div class="board-grid" id="board-grid"></div>
+  </dialog>
+
+  <!-- ── 모달: 내 어망 ── -->
+  <dialog id="dlg-creel" class="dlg">
+    <form method="dialog" class="dlg-close"><button aria-label="닫기">✕</button></form>
+    <h2 class="dlg-title">🐟 내 어망 <small>(게임 속 가상 조과)</small></h2>
+    <ul class="creel" id="creel-list"></ul>
+    <p class="dlg-sub">실제로 잡은 물고기는 <b>📸 조과 인증하기</b>로 사진과 함께 남겨주세요.</p>
+  </dialog>
+
+  <!-- ── 모달: 랜딩 성공 ── -->
+  <dialog id="dlg-catch" class="dlg small">
+    <div class="catch-card">
+      <div class="catch-burst">🎉</div>
+      <h2 id="c-title"></h2>
+      <p id="c-sub"></p>
+      <div class="catch-btns">
+        <button id="c-ok" class="btn-primary" type="button">어망에 넣기</button>
+        <button id="c-real" type="button">실제 조과 인증하러 가기</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

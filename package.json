@@ -1,0 +1,12 @@
+{
+  "name": "online-surflure",
+  "private": true,
+  "type": "module",
+  "description": "온라인 서프루어낚시 — 아바타 낚시와 조과 인증 커뮤니티",
+  "scripts": {
+    "dev": "npx http-server . -p 8080 -c-1"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
