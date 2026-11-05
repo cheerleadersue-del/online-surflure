@@ -5,4 +5,4 @@
 // ※ Secret key(sb_secret_…)나 service_role 키는 절대 여기에 넣지 마세요.
 // 비워두면: Netlify 함수가 있으면 그걸, 없으면 이 브라우저(localStorage)에 저장합니다.
 export const SUPABASE_URL = 'https://wezdjhznjmzxnxvwmtul.supabase.co';
-export const SUPABASE_ANON_KEY = 'sb_publishable_TIX-YT0WjtEAyQgXarfFfQ_25U8CbiX';
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlemRqaHpuam16eG54dndtdHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NzQ4ODIsImV4cCI6MjEwOTQ1MDg4Mn0.YgvRvrHrY4gJ7vDi7XSvAC78LzAugu9obR1xJPBnWrI';
