@@ -22,6 +22,20 @@ export const LINES = {
     ],
     temps: [6, 5, 7, 10, 14, 18, 22, 25, 23, 19, 14, 9],
   },
+  sogari: {
+    id: 'sogari',
+    name: '쏘가리 낚시',
+    desc: '임진강의 여울과 바위 사이, 다리 아래 명당. 쏘가리·꺽지·누치의 강.',
+    spots: ['파주 통일대교', '파주 임진각 자유의다리', '파주 리비교', '파주·연천 비룡대교', '연천 장남교'],
+    temps: [3, 4, 7, 12, 17, 21, 24, 25, 21, 15, 9, 4],
+  },
+  bass: {
+    id: 'bass',
+    name: '배스 낚시',
+    desc: '춘천 소양강의 잔잔한 물과 다리 기둥 주변. 배스·강준치·끄리.',
+    spots: ['춘천 소양강 스카이워크', '춘천 소양2교', '춘천 소양강처녀상', '춘천 신매대교', '춘천 소양강댐 하류 세월교'],
+    temps: [4, 5, 8, 13, 18, 22, 25, 26, 22, 16, 10, 5],
+  },
 };
 
 // 월드 구역(가로 좌표, px)
@@ -33,11 +47,15 @@ const EAST_ZONES = [
   { id: 'rocks', name: '갯바위', from: 7700, to: 9100, ground: 'rock', fish: true, tip: '바위 위로 올라가 볼 수 있어요. 미끄럼 주의!' },
   { id: 'breakwater', name: '방파제', from: 9100, to: 10600, ground: 'concrete', fish: true, tip: '테트라포드 너머 등대. 배낚시 선착장이 있어요.' },
 ];
+const RIVER_ZONES = [
+  { id: 'riverbank', name: '강변', from: 2900, to: 10600, ground: 'pebble', fish: true, tip: '돌이 깔린 강변. 다리 기둥과 바위 주변을 노려보세요.' },
+];
 const SIHWA_ZONES = [
   { id: 'dike', name: '시화방조제', from: 2900, to: 10600, ground: 'concrete', fish: true, tip: '바깥은 서해, 안쪽은 시화호. 끝없이 곧은 방조제.' },
 ];
 export let ZONES = EAST_ZONES;
-export function setZonesFor(point) { ZONES = point && point.type === 'dike' ? SIHWA_ZONES : EAST_ZONES; return ZONES; }
+export const isRiver = (point) => !!point && (point.type === 'bridge' || point.type === 'river');
+export function setZonesFor(point) { ZONES = point && point.type === 'dike' ? SIHWA_ZONES : isRiver(point) ? RIVER_ZONES : EAST_ZONES; return ZONES; }
 export const WORLD_START = 2900;
 export const WORLD_END = 10600;
 export const BOAT_DOCK = 10100;
@@ -64,9 +82,25 @@ export const POINTS = {
   west: [
     { id: 'sihwa', type: 'dike', name: '시화방조제', mark: 'moonTower', desc: '바다와 호수 사이 11km 방조제, 달 전망대' },
   ],
+  // 쏘가리: 임진강 주요 다리
+  sogari: [
+    { id: 'tongil', type: 'bridge', name: '파주 통일대교', mark: 'girder', desc: '임진강을 가로지르는 긴 콘크리트 다리' },
+    { id: 'imjingak', type: 'bridge', name: '임진각 자유의다리', mark: 'freedom', desc: '나무 다리와 옛 철교 교각이 남은 곳' },
+    { id: 'libby', type: 'bridge', name: '파주 리비교', mark: 'old', desc: '낮게 놓인 오래된 콘크리트 다리와 여울' },
+    { id: 'biryong', type: 'bridge', name: '파주·연천 비룡대교', mark: 'arch', desc: '붉은 아치가 걸린 다리 아래 바위 여울' },
+    { id: 'jangnam', type: 'bridge', name: '연천 장남교', mark: 'cable', desc: '주탑과 케이블이 있는 다리, 주상절리 절벽' },
+  ],
+  // 배스: 소양강
+  bass: [
+    { id: 'skywalk', type: 'river', name: '소양강 스카이워크', mark: 'riverSkywalk', desc: '강 위로 뻗은 유리 스카이워크' },
+    { id: 'soyang2', type: 'river', name: '소양2교', mark: 'arch', desc: '하얀 아치 다리 아래 잔잔한 물' },
+    { id: 'maiden', type: 'river', name: '소양강처녀상', mark: 'maiden', desc: '강변에 선 처녀상과 데크' },
+    { id: 'sinmae', type: 'river', name: '신매대교', mark: 'girder', desc: '긴 다리 교각 주변 배스 포인트' },
+    { id: 'sewol', type: 'river', name: '소양강댐 하류 세월교', mark: 'low', desc: '물이 넘나드는 낮은 잠수교' },
+  ],
 };
-export const POINT_TYPE_NAME = { beach: '해수욕장', breakwater: '방파제', port: '항구', dike: '방조제' };
-export const findPoint = (id) => [...POINTS.east, ...POINTS.west].find((p) => p.id === id) || null;
+export const POINT_TYPE_NAME = { beach: '해수욕장', breakwater: '방파제', port: '항구', dike: '방조제', bridge: '임진강 다리', river: '소양강' };
+export const findPoint = (id) => Object.values(POINTS).flat().find((p) => p.id === id) || null;
 
 // 장비: 효과는 캐스팅 거리(cast) · 줄 강도(strong) · 감는 속도(speed) · 입질(bite) · 어종 선호(prefer)
 export const GEAR = {
@@ -83,9 +117,9 @@ export const GEAR = {
   ],
   bait: [
     { id: 'basic', name: '기본형', tag: '갯지렁이', bite: 1.0, prefer: [] },
-    { id: 'worm', name: '웜', tag: '바닥 공략', bite: 1.1, prefer: ['광어', '양태', '우럭', '노래미'] },
+    { id: 'worm', name: '웜', tag: '바닥 공략', bite: 1.1, prefer: ['광어', '양태', '우럭', '노래미', '배스', '쏘가리', '꺽지'] },
     { id: 'metal', name: '메탈', tag: '원거리·회유어', bite: 1.05, prefer: ['삼치', '방어(새끼)', '방어'] },
-    { id: 'minnow', name: '미노우', tag: '표층·중층', bite: 1.1, prefer: ['농어', '황어', '숭어'] },
+    { id: 'minnow', name: '미노우', tag: '표층·중층', bite: 1.1, prefer: ['농어', '황어', '숭어', '쏘가리', '끄리', '강준치'] },
   ],
   outfit: [
     { id: 'basic', name: '기본형', tag: '반바지·슬리퍼', wade: -0.25 },
@@ -107,14 +141,20 @@ export const FISH = {
   lure: {
     east: [['광어', 35, 70], ['양태', 30, 60], ['황어', 30, 50], ['삼치', 45, 80], ['방어(새끼)', 35, 55], ['농어', 40, 80], ['숭어', 35, 60]],
     west: [['광어', 35, 75], ['농어', 40, 90], ['양태', 30, 60], ['우럭', 20, 40], ['노래미', 20, 38], ['삼치', 40, 70], ['숭어', 35, 65]],
+    sogari: [['쏘가리', 20, 50], ['꺽지', 12, 22], ['누치', 30, 55], ['강준치', 40, 75], ['끄리', 25, 40], ['동자개', 15, 30]],
+    bass: [['배스', 25, 55], ['쏘가리', 20, 45], ['강준치', 40, 80], ['끄리', 25, 40], ['블루길', 12, 22], ['누치', 30, 55]],
   },
   far: {
     east: [['보리멸', 15, 25], ['도다리', 20, 35], ['노래미', 20, 35], ['황어', 30, 45], ['붕장어', 40, 80]],
     west: [['보리멸', 15, 25], ['도다리', 20, 38], ['붕장어', 40, 90], ['노래미', 20, 38], ['망둥어', 15, 25]],
+    sogari: [['동자개', 15, 30], ['누치', 30, 55], ['메기', 30, 70], ['쏘가리', 20, 45]],
+    bass: [['메기', 30, 70], ['배스', 25, 50], ['누치', 30, 55], ['블루길', 12, 22]],
   },
   float: {
     east: [['볼락', 15, 28], ['우럭', 20, 42], ['참돔', 30, 60], ['쥐노래미', 20, 40], ['열기', 15, 28]],
     west: [['우럭', 20, 50], ['참돔', 30, 65], ['광어', 35, 70], ['노래미', 20, 40], ['감성돔', 25, 50]],
+    sogari: [['쏘가리', 20, 48], ['꺽지', 12, 22], ['누치', 30, 50]],
+    bass: [['배스', 25, 55], ['강준치', 40, 75], ['블루길', 12, 22]],
   },
 };
 

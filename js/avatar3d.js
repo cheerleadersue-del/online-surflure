@@ -207,6 +207,18 @@ export class Avatar {
 
   doAction(a, at, t) {
     const L = this.arms[0], Rr = this.arms[1];
+    if (a === 'release') {
+      // 쪼그려 앉아 두 손으로 물고기를 감싸 쥐고 → 앞으로 살며시 밀어 보낸다
+      const k = Math.min(1, at / 0.5), push = Math.max(0, Math.min(1, (at - 0.7) / 0.5));
+      this.root.position.y = -0.16 * k;
+      this.root.rotation.x = 0.45 * k + 0.15 * push;
+      this.legs[0].rotation.x = this.legs[1].rotation.x = -1.2 * k;
+      L.rotation.x = Rr.rotation.x = -1.2 * k - 0.6 * push;
+      L.rotation.z = 0.25 * k; Rr.rotation.z = -0.25 * k;
+      this.rod.visible = false;
+      this.head.rotation.x = 0.3 * k;
+      return;
+    }
     if (a === 'bow') {
       // 꾸벅 인사
       this.root.rotation.x = Math.sin(Math.min(1, at / 1.4) * Math.PI) * 0.45;

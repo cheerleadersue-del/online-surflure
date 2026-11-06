@@ -370,3 +370,12 @@ button { cursor: pointer; }
   .rank { font-size: 0.7rem; padding: 4px 6px; }
   .rank:not(.open) ol li:not(:first-child) { display: none; }
 }
+
+.line-card.sogari { background: linear-gradient(180deg, #d9c27a 0%, #7a8a4a 45%, #3a5a3a 100%); }
+.line-card.bass { background: linear-gradient(180deg, #9fd0c8 0%, #4f8a6a 45%, #24463e 100%); }
+.line-cards { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 760px) { .line-cards { grid-template-columns: repeat(2, 1fr); } .line-card { min-height: 86px; padding: 12px; } .line-card strong { font-size: 1.05rem; } }
+/* 랭킹 1~3위는 항상 모두 보이게 */
+.rank:not(.open) ol li:not(:first-child) { display: flex !important; }
+.rank li.vacant { opacity: 0.55; }
+#c-sub { white-space: pre-line; }

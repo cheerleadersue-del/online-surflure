@@ -35,6 +35,7 @@ const METHOD_NAME = { ...Object.fromEntries(Object.values(METHODS).map((m) => [m
 const audio = new SoundScape();
 const scene = new World($('#world'));
 scene.audioHook = (d) => audio.boil(d);
+scene.audioSplash = () => audio.plop(0.15);
 let preview = null;
 const store = new Store();
 const profile = load('surflure.profile', {});
@@ -128,7 +129,7 @@ function renderPoints() {
   box.textContent = '';
   if (!st.line) return;
   const list = POINTS[st.line];
-  ['beach', 'breakwater', 'port', 'dike'].forEach((type) => {
+  ['beach', 'breakwater', 'port', 'dike', 'bridge', 'river'].forEach((type) => {
     const items = list.filter((p) => p.type === type);
     if (!items.length) return;
     box.append(el('h3', { text: POINT_TYPE_NAME[type] }));
@@ -447,35 +448,20 @@ function showCatch(f) {
 }
 function openCatchDialog(f) {
   $('#c-title').textContent = `${f.name} ${f.size}cm!`;
-  $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${zone ? (st.onBoat ? '배 위' : zone.name) : ''} · ${timeSlot(nowDate())}`;
+  $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${st.point ? st.point.name : ''} · ${timeSlot(nowDate())}\n랭킹에 기록됐어요. 물고기를 놓아줄까요?`;
   $('#dlg-catch').showModal();
 }
-function stashCatch() {
+// 방생: 쪼그려 앉아 두 손으로 물고기를 물로 돌려보낸다
+function releaseCatch() {
   if (!pendingCatch) return;
-  creel.unshift({ ...pendingCatch, line: st.line, place: st.onBoat ? '선상' : zone?.name });
-  creel = creel.slice(0, 100);
-  save('surflure.creel', creel);
-  $('#creel-count').textContent = creel.length;
   pendingCatch = null;
+  scene.playerAction('release', 1.8);
+  scene.releaseCatch();
+  setTimeout(() => shout(pick(['잘 가~!', '다음에 또 만나!', '건강하게 커라~', '고마워, 잘 가!']), { cut: true, pitch: 1.25, rate: 1.0 }), 500);
+  setTimeout(() => { if (fishing.state === 'result') fishing.reset(); }, 1900);
 }
-$('#c-ok').addEventListener('click', () => { stashCatch(); $('#dlg-catch').close(); });
-$('#c-real').addEventListener('click', () => {
-  const f = pendingCatch;
-  stashCatch();
-  $('#dlg-catch').close();
-  openWrite({ species: f?.name, method: f?.method });
-});
-$('#dlg-catch').addEventListener('close', stashCatch);
-$('#btn-creel').addEventListener('click', () => {
-  const ul = $('#creel-list');
-  ul.textContent = '';
-  if (!creel.length) ul.append(el('li', { text: '아직 비어 있어요. 바다로 캐스팅해 보세요!' }));
-  creel.forEach((c) => ul.append(el('li', {},
-    el('b', { text: `${c.name} ${c.size}cm` }),
-    el('span', { text: `${LINES[c.line]?.name || ''} · ${METHOD_NAME[c.method]} · ${new Date(c.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` }),
-  )));
-  $('#dlg-creel').showModal();
-});
+$('#c-release').addEventListener('click', () => { $('#dlg-catch').close(); });
+$('#dlg-catch').addEventListener('close', releaseCatch);
 
 // ── 상세 보기 ──
 let detailId = null;
@@ -767,11 +753,12 @@ function frame(now) {
     scene.vmPose = { state: fs, power: fishing.power, k: fishing.k, jerk: fs === 'retrieve' ? fishing.jerk || 0 : 0, pressed: fishing.pressed };
 
     const x = st.onBoat ? BOAT_DOCK : av.x;
+    const river = DATA.isRiver(st.point);
     audio.update({
-      forest: st.onBoat ? 0 : 1 - smooth(1700, 2700, x),
-      sea: st.onBoat ? 0.6 : 0.08 + smooth(1500, 3000, x) * 0.92,
-      gull: smooth(2600, 3200, x),
-      rock: st.onBoat ? 0 : Math.max(smooth(6400, 6600, x) * (1 - smooth(9000, 9200, x)), smooth(5300, 5600, x) * 0.4),
+      forest: river ? 0.55 : st.onBoat ? 0 : 1 - smooth(1700, 2700, x),
+      sea: river ? 0.22 : st.onBoat ? 0.6 : 0.08 + smooth(1500, 3000, x) * 0.92,
+      gull: river ? 0 : smooth(2600, 3200, x),
+      rock: st.onBoat || river ? 0 : Math.max(smooth(6400, 6600, x) * (1 - smooth(9000, 9200, x)), smooth(5300, 5600, x) * 0.4),
       boat: st.onBoat ? 1 : 0,
     }, dt);
 
@@ -940,10 +927,14 @@ async function refreshRank() {
   const top = await records.top3(st.point.id);
   const ol = $('#rank-list');
   ol.textContent = '';
-  if (!top.length) { ol.append(el('li', { class: 'empty', text: '아직 기록이 없어요. 첫 기록의 주인공이 되어보세요!' })); return; }
+  // 1·2·3위를 항상 세 줄로 (빈자리는 '도전자 모집')
   const medal = ['🥇', '🥈', '🥉'];
-  top.forEach((r, i) => ol.append(el('li', { class: r.name === st.look.name ? 'me' : '' },
-    el('span', { class: 'm', text: medal[i] }), el('span', { text: `${r.name} · ${r.species} ${Math.round(r.size * 10) / 10}cm` }))));
+  for (let i = 0; i < 3; i++) {
+    const r = top[i];
+    ol.append(r
+      ? el('li', { class: r.name === st.look.name ? 'me' : '' }, el('span', { class: 'm', text: medal[i] }), el('span', { text: `${r.name} · ${r.species} ${Math.round(r.size * 10) / 10}cm` }))
+      : el('li', { class: 'vacant' }, el('span', { class: 'm', text: medal[i] }), el('span', { text: '— 도전자를 기다려요' })));
+  }
   return top;
 }
 records.on((point) => { if (st.playing && st.point && (!point || point === st.point.id)) refreshRank(); });
@@ -987,7 +978,6 @@ addEventListener('beforeunload', () => net.leave());
 // ── 시작 ──
 addEventListener('resize', () => scene.resize());
 buildEntry();
-$('#creel-count').textContent = creel.length;
 store.on(() => {
   if ($('#dlg-board').open) renderBoard();
   if ($('#dlg-detail').open && detailId) {

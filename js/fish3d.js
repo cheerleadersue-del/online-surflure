@@ -22,6 +22,16 @@ const LOOK = {
   감성돔: { back: '#3e4650', belly: '#d8dde0', pat: 'bands', h: 0.42 },
   볼락: { back: '#6a5040', belly: '#d8c4a8', pat: 'bands', h: 0.33, spiny: true },
   열기: { back: '#c0503a', belly: '#f0c8b0', pat: 'none', h: 0.33, spiny: true },
+  // 민물고기
+  쏘가리: { back: '#a88a4a', belly: '#efe2bc', pat: 'leopard', h: 0.3, spiny: true },
+  꺽지: { back: '#5d5a3a', belly: '#cfc6a0', pat: 'bands', h: 0.34, spiny: true },
+  배스: { back: '#4f6a3a', belly: '#e8ead8', pat: 'blotch', h: 0.3 },
+  누치: { back: '#8a8a78', belly: '#f2f0e6', pat: 'none', h: 0.22 },
+  강준치: { back: '#7f8c94', belly: '#f4f6f6', pat: 'none', h: 0.24 },
+  끄리: { back: '#5c6e7a', belly: '#f0e8e0', pat: 'stripe', stripe: '#d77a5a', h: 0.22 },
+  블루길: { back: '#4a5a6a', belly: '#e8b060', pat: 'bands', h: 0.5 },
+  동자개: { back: '#8a6a2a', belly: '#e8d29a', pat: 'mottle', h: 0.2 },
+  메기: { back: '#3a3a34', belly: '#bdb8a8', pat: 'mottle', h: 0.16 },
 };
 export const fishLook = (name) => LOOK[(name || '').replace(/\(.*\)/, '')] || LOOK.농어;
 
@@ -87,6 +97,16 @@ function skinTexture(look, seed) {
       g.strokeStyle = 'rgba(40,50,60,0.35)';
       g.lineWidth = 4;
       for (let k = 0; k < 6; k++) { const y = backY(0.2 + k * 0.12); g.beginPath(); g.moveTo(W * 0.1, y); g.lineTo(W * 0.9, y); g.stroke(); }
+      break;
+    case 'leopard':
+      for (let i = 0; i < 120; i++) {
+        g.fillStyle = `rgba(${r() < 0.7 ? '40,30,15' : '70,55,25'},${0.55 + r() * 0.3})`;
+        g.beginPath(); g.ellipse(r() * W * 0.9, backY(0.15 + r() * 0.7), 6 + r() * 12, 4 + r() * 9, r() * 3, 0, Math.PI * 2); g.fill();
+      }
+      break;
+    case 'blotch':
+      g.fillStyle = 'rgba(25,35,20,0.6)';
+      for (let i = 0; i < 16; i++) { g.beginPath(); g.ellipse(W * (0.12 + i * 0.05), H * (0.5 + Math.sin(i) * 0.03), 22, 14, 0, 0, Math.PI * 2); g.fill(); }
       break;
     case 'blueDots':
       for (let i = 0; i < 90; i++) dot(r() * W * 0.85, backY(0.15 + r() * 0.7), 3 + r() * 2, 'rgba(80,170,240,0.85)');
