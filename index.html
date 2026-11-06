@@ -74,6 +74,7 @@
         <span id="hud-time">--:--</span>
         <span id="hud-temp">수온 --°C</span>
         <span id="hud-store" class="pill">로컬</span>
+        <span id="hud-people" class="pill" title="지금 함께 있는 낚시꾼">👥 1명</span>
       </div>
       <select id="time-mode" aria-label="시간대">
         <option value="real">🕒 실제 시간</option>
@@ -88,6 +89,7 @@
     <nav class="hud-actions">
       <button id="btn-write" class="btn-primary" type="button">📸 조과 인증하기</button>
       <button id="btn-board" type="button">📋 조과 게시판</button>
+      <button id="btn-social" type="button">💬 소통</button>
       <button id="btn-creel" type="button">🐟 내 어망 <b id="creel-count">0</b></button>
       <button id="btn-sound" type="button" aria-pressed="true">🔊</button>
       <button id="btn-home" type="button" title="처음으로">🏠</button>
@@ -106,6 +108,39 @@
       <button data-v="sky" type="button">🕊️ 하늘</button>
     </div>
     <p class="walk-hint" id="walk-hint">가고 싶은 곳을 터치하면 걸어가요 · 드래그로 둘러보기 · 두 손가락/휠로 확대</p>
+
+    <div class="social-panel" id="social-panel" hidden>
+      <div class="sp-head">
+        <div class="seg sp-tabs" id="sp-tabs">
+          <button data-tab="act" class="on" type="button">동작</button>
+          <button data-tab="talk" type="button">멘트</button>
+          <button data-tab="chat" type="button">채팅</button>
+        </div>
+        <label class="sp-voice"><input type="checkbox" id="sp-voice" checked> 🗣️ 음성</label>
+        <button class="sp-close" id="sp-close" type="button" aria-label="닫기">✕</button>
+      </div>
+      <div class="sp-body" data-tab="act">
+        <div class="act-grid">
+          <button data-act="bow" type="button">🙇 인사</button>
+          <button data-act="wave" type="button">👋 손흔들기</button>
+          <button data-act="sit" type="button">🪑 앉기</button>
+          <button data-act="highfive" type="button">✋ 하이파이브</button>
+          <button data-act="castle" type="button">🏰 모래성 쌓기</button>
+          <button data-act="nice" type="button">👏 나이스!</button>
+        </div>
+        <p class="sp-tip">하이파이브는 가까이(2~3걸음) 있는 사람과 같이 누르면 “짝!”</p>
+      </div>
+      <div class="sp-body" data-tab="talk" hidden>
+        <div class="talk-list" id="talk-list"></div>
+      </div>
+      <div class="sp-body" data-tab="chat" hidden>
+        <ul class="chat-log" id="chat-log"></ul>
+        <form class="chat-form" id="chat-form">
+          <input id="chat-input" maxlength="80" placeholder="메시지를 입력하세요 (80자)" autocomplete="off">
+          <button class="btn-primary">보내기</button>
+        </form>
+      </div>
+    </div>
 
     <div class="fish-panel" id="fish-panel" hidden>
       <div class="method-tabs" id="method-tabs">
@@ -163,42 +198,17 @@
         <label class="photo-drop" id="photo-drop">
           <input type="file" id="w-photo" accept="image/*" required>
           <img id="w-photo-prev" alt="" hidden>
-          <span id="w-photo-txt">📷 사진 선택 (필수)<small>촬영 시각·위치 정보가 있으면 자동으로 채워져요</small></span>
+          <span id="w-photo-txt">📷 사진 선택 (필수)<small>사진의 촬영 시각으로 시간대가 자동으로 채워져요</small></span>
         </label>
-        <fieldset class="row2">
-          <label class="field"><span>라인</span>
-            <select id="w-line"><option value="east">동해라인</option><option value="west">서해라인</option></select></label>
-          <label class="field"><span>낚시 방법</span>
-            <select id="w-method"><option value="lure">서프루어</option><option value="far">원투</option><option value="float">찌낚시(배)</option><option value="etc">기타</option></select></label>
-        </fieldset>
         <label class="field"><span>장소 *</span>
           <input id="w-spot" list="spot-list" maxlength="60" required placeholder="예) 양양 하조대 남쪽 백사장"><datalist id="spot-list"></datalist></label>
         <fieldset class="row2">
-          <label class="field"><span>위도</span><input id="w-lat" inputmode="decimal" placeholder="선택"></label>
-          <label class="field"><span>경도</span><input id="w-lng" inputmode="decimal" placeholder="선택"></label>
+          <label class="field"><span>시간대 *</span>
+            <select id="w-slot" required>
+              <option>새벽</option><option>아침</option><option>낮</option><option>오후</option><option>해질녘</option><option>밤</option>
+            </select></label>
+          <label class="field"><span>어종 *</span><input id="w-species" list="species-list" maxlength="30" required placeholder="예) 광어"><datalist id="species-list"></datalist></label>
         </fieldset>
-        <fieldset class="row2">
-          <label class="field"><span>잡은 시각</span><input id="w-time" type="datetime-local" required></label>
-          <label class="field"><span>시간대</span><input id="w-slot" readonly></label>
-        </fieldset>
-        <fieldset class="row3">
-          <label class="field"><span>어종 *</span><input id="w-species" list="species-list" maxlength="30" required><datalist id="species-list"></datalist></label>
-          <label class="field"><span>크기(cm)</span><input id="w-size" type="number" min="0" max="300" step="0.5"></label>
-          <label class="field"><span>마릿수</span><input id="w-count" type="number" min="1" max="999" value="1"></label>
-        </fieldset>
-        <label class="field"><span>미끼 / 루어</span><input id="w-bait" list="bait-list" maxlength="60" placeholder="예) 메탈지그 30g 핑크"><datalist id="bait-list"></datalist></label>
-        <fieldset class="row3">
-          <label class="field"><span>로드</span><input id="w-rod" maxlength="60" placeholder="서프로드 10ft"></label>
-          <label class="field"><span>릴</span><input id="w-reel" maxlength="60" placeholder="스피닝 4000번"></label>
-          <label class="field"><span>라인</span><input id="w-linespec" maxlength="60" placeholder="합사 1.2호"></label>
-        </fieldset>
-        <fieldset class="row3">
-          <label class="field"><span>수온(°C)</span><input id="w-temp" type="number" step="0.1" min="-5" max="40"></label>
-          <label class="field"><span>물때</span><select id="w-tide"></select></label>
-          <label class="field"><span>날씨</span><select id="w-weather"></select></label>
-        </fieldset>
-        <label class="field"><span>어떻게 잡았나요?</span>
-          <textarea id="w-story" rows="4" maxlength="2000" placeholder="포인트 특징, 캐스팅 거리, 액션, 입질 패턴 등을 나눠주세요"></textarea></label>
         <p class="form-err" id="w-err" role="alert"></p>
         <button class="btn-primary big" id="w-submit">🚩 깃발 꽂기 (등록)</button>
       </form>

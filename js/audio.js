@@ -343,6 +343,17 @@ export class SoundScape {
     this._tone('sine', 880, 1320, 0.08, 0.01, 0.25, 0.1);
   }
 
+  // 박수 / 하이파이브 '짝!'
+  clap(single = false) {
+    if (!this.ctx) return;
+    const n = single ? 1 : 5;
+    for (let i = 0; i < n; i++) {
+      const w = single ? 0 : i * (0.11 + Math.random() * 0.05);
+      this._burst(this.white, 'bandpass', 1400 + Math.random() * 600, 1.2, single ? 0.5 : 0.25, 0.001, 0.07, w);
+      this._burst(this.pink, 'highpass', 3000, 0.7, single ? 0.2 : 0.1, 0.001, 0.05, w);
+    }
+  }
+
   ui() {
     if (!this.ctx) return;
     this._tone('sine', 900, 1100, 0.05, 0.005, 0.08);

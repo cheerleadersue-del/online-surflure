@@ -1,6 +1,6 @@
 // 귀여운 꼬마 낚시꾼 3D 아바타 (큰 머리·동글동글한 몸, 직접 디자인)
 import * as THREE from '../vendor/three/three.module.min.js';
-import { nameTexture } from './textures.js';
+import { nameTexture, bubbleTexture } from './textures.js';
 
 const SKIN = '#f6d2b4';
 const fabric = (color) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.75, sheen: 0.6, sheenRoughness: 0.6, sheenColor: new THREE.Color('#ffffff') });
@@ -147,9 +147,37 @@ export class Avatar {
     this.nameSprite = sp;
   }
 
+  // 말풍선 (몇 초 뒤 사라짐)
+  say(text, ms = 4500) {
+    if (this.bubble) { this.group.remove(this.bubble); this.bubble.material.map.dispose(); }
+    const { tex, aspect } = bubbleTexture(text);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false }));
+    const h = 0.42;
+    sp.scale.set(h * aspect, h, 1);
+    sp.position.y = 2.05;
+    sp.renderOrder = 11;
+    sp.userData.until = performance.now() + ms;
+    this.group.add(sp);
+    this.bubble = sp;
+  }
+
+  // 1인칭: 몸은 숨기고 낚싯대와 오른팔만
+  setFirstPerson(on) {
+    if (this.fp === on) return;
+    this.fp = on;
+    this.root.children.forEach((c) => { c.visible = !on || c === this.rod || c === this.arms[1]; });
+    if (this.nameSprite) this.nameSprite.visible = !on;
+  }
+
   // rodE: 낚싯대 앙각(라디안), bend: 휨 0..1
-  pose({ walking = false, phase = 0, rodE = 1.25, bend = 0, noRod = false, t = 0 }) {
+  // action: bow(인사) · wave(손흔들기) · sit(앉기) · highfive · castle(모래성), actionT: 시작 후 초
+  pose({ walking = false, phase = 0, rodE = 1.25, bend = 0, noRod = false, t = 0, action = null, actionT = 0 }) {
+    if (this.bubble && performance.now() > this.bubble.userData.until) { this.group.remove(this.bubble); this.bubble = null; }
     const sw = walking ? Math.sin(phase) : 0;
+    this.root.position.y = 0;
+    this.root.rotation.x = 0;
+    this.arms[0].rotation.z = 0;
+    this.arms[1].rotation.z = 0;
     this.legs[0].rotation.x = sw * 0.7;
     this.legs[1].rotation.x = -sw * 0.7;
     this.arms[0].rotation.x = -sw * 0.6;
@@ -165,6 +193,33 @@ export class Avatar {
     const blink = (t % 4.2) < 0.12 ? 0.15 : 1;
     this.eyes.forEach((e) => { e.scale.y = blink; });
     this.bob = walking ? Math.abs(Math.cos(phase)) * 0.05 : 0;
+    if (action && !walking) this.doAction(action, actionT, t);
+  }
+
+  doAction(a, at, t) {
+    const L = this.arms[0], Rr = this.arms[1];
+    if (a === 'bow') {
+      // 꾸벅 인사
+      this.root.rotation.x = Math.sin(Math.min(1, at / 1.4) * Math.PI) * 0.45;
+    } else if (a === 'wave') {
+      L.rotation.z = -2.5 + Math.sin(t * 12) * 0.35;
+      L.rotation.x = 0;
+    } else if (a === 'highfive') {
+      L.rotation.x = -2.8;
+      L.rotation.z = -0.3;
+      if (at > 0.6 && at < 0.9) L.rotation.x = -2.4;
+    } else if (a === 'sit' || a === 'castle') {
+      this.root.position.y = -0.2;
+      this.legs[0].rotation.x = -1.45;
+      this.legs[1].rotation.x = -1.45;
+      if (a === 'castle') {
+        // 두 손으로 모래를 토닥토닥
+        L.rotation.x = -0.9 + Math.sin(t * 8) * 0.35;
+        Rr.rotation.x = -0.9 + Math.sin(t * 8 + Math.PI) * 0.35;
+        this.rod.visible = false;
+        this.head.rotation.x = 0.25;
+      }
+    }
   }
 
   tipWorld(v = new THREE.Vector3()) {
