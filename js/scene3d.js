@@ -2,11 +2,15 @@
 import * as THREE from '../vendor/three/three.module.min.js';
 import { Avatar } from './avatar3d.js';
 import { loadHDR } from './assets.js';
+import { makeRealFish, flop, fishLook } from './fish3d.js';
 import * as TX from './textures.js';
 import { rng, smooth, lerp, clamp, skyAt, hashStr } from './scene.js';
 
 export const M = 0.06; // 게임 좌표(px) → 미터
-const PIER_X = 391, PIER_TOP = 2.6;
+// 해안선 구간(미터): 숲 → 모랫길 → 모래해변 → 몽돌해변 → 해안 데크길(절벽) → 갯바위 → 방파제
+const LAY = { beach0: 174, peb0: 318, deck0: 390, deck1: 462, rock0: 462, pier0: 546, end: 640 };
+const PIER_X = LAY.pier0, PIER_TOP = 2.6, PIER_LEN = 94;
+const DECK_Y = 3.4, DECK_Z0 = -3.6, DECK_Z1 = 0.4;
 
 // ── 지형 함수 ──
 function hash(i, j) {
@@ -24,12 +28,30 @@ const fbm = (x, z) => vnoise(x, z) * 0.5 + vnoise(x * 2.1 + 5, z * 2.1) * 0.25 +
 
 export function shoreZ(X) {
   let z = lerp(-170, -13 + Math.sin(X * 0.035) * 2.5, smooth(95, 172, X));
-  z = lerp(z, -9 + Math.sin(X * 0.11) * 1.5, smooth(312, 330, X));
-  z = lerp(z, -5.6, smooth(384, 392, X));
+  // 몽돌 해변: 안쪽으로 둥글게 들어간 작은 만
+  const cove = smooth(LAY.peb0 - 6, LAY.peb0 + 8, X) * (1 - smooth(LAY.deck0 - 12, LAY.deck0 + 2, X));
+  z = lerp(z, -6 + 5 * Math.sin(((X - LAY.peb0) / (LAY.deck0 - LAY.peb0)) * Math.PI) - 4, cove);
+  // 해안 데크길: 절벽이 바다에 바짝
+  z = lerp(z, -7 + Math.sin(X * 0.09) * 1.2, smooth(LAY.deck0 - 4, LAY.deck0 + 6, X));
+  z = lerp(z, -9 + Math.sin(X * 0.11) * 1.5, smooth(LAY.rock0 - 6, LAY.rock0 + 10, X));
+  z = lerp(z, -5.6, smooth(PIER_X - 7, PIER_X + 1, X));
   return z;
 }
 function hillH(X, Z) {
-  return 42 * Math.exp(-(((X - 378) ** 2) / (2 * 38 * 38) + ((Z - 92) ** 2) / (2 * 32 * 32)));
+  const mask = smooth(6, 26, Z - shoreZ(X)); // 언덕이 물가까지 번지지 않게
+  if (mask <= 0) return 0;
+  return mask * hillRaw(X, Z);
+}
+function hillRaw(X, Z) {
+  return 42 * Math.exp(-(((X - 600) ** 2) / (2 * 40 * 40) + ((Z - 96) ** 2) / (2 * 32 * 32)))
+    + 26 * Math.exp(-(((X - 425) ** 2) / (2 * 46 * 46) + ((Z - 70) ** 2) / (2 * 36 * 36)));
+}
+// 데크길 뒤편 절벽 높이
+function cliffH(X, Z) {
+  const k = smooth(LAY.deck0 - 2, LAY.deck0 + 10, X) * (1 - smooth(LAY.deck1 - 10, LAY.deck1 + 4, X));
+  if (k <= 0) return 0;
+  const dz = Z - shoreZ(X);
+  return k * 8.5 * smooth(5.2, 9, dz) * (0.85 + fbm(X * 0.2, Z * 0.2) * 0.3);
 }
 function heightAt(X, Z) {
   const sz = shoreZ(X);
@@ -43,10 +65,21 @@ function heightAt(X, Z) {
     h += Math.max(0, fbm(X * 0.08, Z * 0.11) - 0.42) * 1.6 * (1 - forest) * smooth(14, 22, dz);
     if (Math.abs(Z) < 2.4) h -= 0.12 * forest * (1 - Math.abs(Z) / 2.4);
   }
-  const rocky = smooth(312, 330, X) * (1 - smooth(386, 394, X));
+  const rocky = rockyK(X);
   if (rocky > 0 && dz > -8 && dz < 10) h += rocky * fbm(X * 0.22, Z * 0.22) * 1.4 * (1 - Math.abs(dz - 1) / 11);
-  h += hillH(X, Z);
+  h += hillH(X, Z) + cliffH(X, Z);
   return h;
+}
+function rockyK(X) {
+  return Math.max(smooth(LAY.rock0 - 6, LAY.rock0 + 12, X) * (1 - smooth(PIER_X - 6, PIER_X + 2, X)),
+    smooth(LAY.deck0, LAY.deck0 + 8, X) * (1 - smooth(LAY.deck1 - 8, LAY.deck1, X)) * 0.8);
+}
+export { heightAt };
+export function deckY(X) {
+  // 몽돌해변에서 올라가는 경사로 → 평평한 데크 → 갯바위로 내려가는 계단
+  if (X < LAY.deck0 - 6 || X > LAY.deck1 + 4) return null;
+  const up = smooth(LAY.deck0 - 6, LAY.deck0 + 6, X), down = 1 - smooth(LAY.deck1 - 8, LAY.deck1 + 4, X);
+  return lerp(0.7, DECK_Y, Math.min(up, down));
 }
 export function groundY(X) {
   return X > PIER_X ? PIER_TOP : heightAt(X, 0);
@@ -88,6 +121,9 @@ export class World {
     this.camLook = new THREE.Vector3(0, 1, 0);
     this.camDir = 1;
     this.tmp = new THREE.Vector3();
+    // 궤도 카메라 (드래그 회전 · 휠/핀치 확대 · 하늘 시점)
+    this.orbit = { yaw: -0.9, pitch: 0.32, dist: 7, tYaw: -0.9, tPitch: 0.32, tDist: 7, touched: 0 };
+    this.catchCamUntil = 0;
     this.resize();
   }
 
@@ -124,12 +160,16 @@ export class World {
     sun.shadow.normalBias = 0.04;
     scene.add(sun, sun.target);
 
+    this.colliders = [];
+    this.rockTops = [];
+    this.walkMeshes = [];
     this.buildTerrain();
     this.buildWater();
     this.buildTrees();
     this.buildRocks();
     this.buildCoastStructures();
     this.buildPier();
+    this.buildCoveAndDeck();
     this.buildDistant();
     this.buildAmbient();
     this.buildFishingGear();
@@ -163,7 +203,7 @@ export class World {
   buildTerrain() {
     const S = this.style;
     const xs = [];
-    for (let x = -80; x <= 560; x += 1.6) xs.push(x);
+    for (let x = -80; x <= 720; x += 1.6) xs.push(x);
     const zs = [];
     for (let z = -440; z < -80; z += 8) zs.push(z);
     for (let z = -80; z < -40; z += 3) zs.push(z);
@@ -201,7 +241,7 @@ export class World {
           c.lerp(fc, f);
         }
         // 갯바위 지대
-        const rocky = smooth(312, 330, X) * (1 - smooth(386, 394, X));
+        const rocky = rockyK(X);
         if (rocky > 0 && dz > -6 && dz < 9) {
           const rc = S.rock.clone().multiplyScalar(0.8 + n * 0.3);
           if (h < 0.5 && h > -0.4) rc.lerp(S.mussel, 0.7 * smooth(0.4, 0.6, fbm(X * 0.9, Z * 0.9)));
@@ -224,6 +264,8 @@ export class World {
           const beach = 1 - f;
           let wet = (dz < 0 ? 1 : 1 - smooth(1.2, 5, dz)) * beach;
           let peb = west ? beach * smooth(-14, -6, dz) * (1 - smooth(22, 30, dz)) : 0;
+          const coveK = smooth(LAY.peb0 - 4, LAY.peb0 + 6, X) * (1 - smooth(LAY.deck0 - 6, LAY.deck0 + 2, X));
+          peb = Math.max(peb, coveK * smooth(-10, -3, dz) * (1 - smooth(18, 26, dz)));
           let fo = Math.max(f * land * (1 - pathK * 0.95), smooth(24, 34, dz) * beach);
           let rk = 0;
           if (rocky > 0 && dz > -6 && dz < 9) rk = rocky * smooth(0.25, 0.5, n + 0.2);
@@ -233,6 +275,8 @@ export class World {
             fo = Math.max(fo, smooth(2, 6, hh2) * (1 - steep));
             rk = Math.max(rk, smooth(2, 6, hh2) * steep);
           }
+          const ch = cliffH(X, Z);
+          if (ch > 0.5) { rk = Math.max(rk, smooth(0.5, 3, ch) * (1 - smooth(7, 8.5, ch) * 0.7)); fo = Math.max(fo, smooth(7, 8.5, ch)); }
           splat[i * 4] = wet; splat[i * 4 + 1] = peb; splat[i * 4 + 2] = fo; splat[i * 4 + 3] = rk;
           // 색 보정(틴트)
           c.setRGB(1, 1, 1).multiplyScalar(0.9 + n * 0.2);
@@ -265,8 +309,8 @@ export class World {
     this.terrain = mesh;
 
     // 물 깊이 지도 (물 셰이더의 얕은 물빛·포말용)
-    this.bounds = new THREE.Vector4(-80, -440, 640, 600);
-    const W = 640, H = 600;
+    this.bounds = new THREE.Vector4(-80, -440, 800, 600);
+    const W = 800, H = 600;
     const data = new Uint8Array(W * H);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
@@ -343,7 +387,7 @@ export class World {
   buildWater() {
     const S = this.style;
     // 가까운 바다: 촘촘한 격자(실제로 출렁임) / 먼 바다: 구멍 뚫린 큰 판
-    const NX0 = -500, NX1 = 1100, NZ0 = -1100, NZ1 = 60;
+    const NX0 = -500, NX1 = 1300, NZ0 = -1100, NZ1 = 60;
     const near = new THREE.PlaneGeometry(NX1 - NX0, NZ1 - NZ0, this.mobile ? 200 : 320, this.mobile ? 150 : 240);
     near.rotateX(-Math.PI / 2);
     near.translate((NX0 + NX1) / 2, 0, (NZ0 + NZ1) / 2);
@@ -562,7 +606,11 @@ export class World {
     place(-80, 175, -150, 80, 6.5, (X, Z) => (1 - smooth(105, 172, X)) * (Math.abs(Z) < 12 ? 0.95 : 0.8), 11, 19,
       (X, Z) => Math.abs(Z + Math.sin(X * 0.05) * 0.4) < 3.6 || shoreZ(X) + 6 > Z);
     // 해변 뒤 방풍림
-    place(150, 340, 36, 90, 7.5, () => 0.55, 9, 15);
+    place(150, LAY.deck0 - 30, 36, 90, 7.5, () => 0.55, 9, 15);
+    // 절벽 위 소나무 (데크길 뒤)
+    place(LAY.deck0 + 6, LAY.deck1 - 6, 3, 40, 6, (X, Z) => (cliffH(X, Z) > 6 ? 0.7 : 0), 7, 12);
+    // 미로 같은 숲: 길 밖에도 굽이진 오솔길 사이로 빽빽하게
+    place(-60, 120, 14, 70, 5.2, (X, Z) => ((Math.sin(X * 0.09) * Math.cos(Z * 0.13) > 0.35) ? 0 : 0.75), 10, 17);
     const counts = [0, 0, 0];
     trees.forEach((t) => counts[t.v]++);
     const trunks = trunkGeos.map((g, i) => {
@@ -595,6 +643,7 @@ export class World {
       crowns.setColorAt(crowns.count, tint);
       crowns.count++;
     };
+    for (const t of trees) this.colliders.push({ X: t.X, Z: t.Z, r: 0.45 + t.H / 60 });
     for (const t of trees) {
       const y0 = heightAt(t.X, t.Z) - 0.2;
       const trunkH = t.H * 0.86;
@@ -627,7 +676,7 @@ export class World {
     }
     // 언덕을 덮은 숲 (덩어리만)
     for (let i = 0; i < 900; i++) {
-      const X = 318 + r() * 120, Z = 38 + r() * 110;
+      const X = 360 + r() * 300, Z = 30 + r() * 120;
       const hh = hillH(X, Z);
       if (hh < 3 || crowns.count >= nBlobs) continue;
       const sc = 2 + r() * 1.6;
@@ -698,9 +747,10 @@ export class World {
       q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.3, r() * 6, (r() - 0.5) * 0.3));
       m4.compose(pp.set(X, y, Z), q, s.set(sc * (1 + r() * 0.6), sc * (0.7 + r() * 0.5), sc * (1 + r() * 0.5)));
       im.setMatrixAt(im.count++, m4);
+      this.rockTops.push({ X, Z, rad: Math.min(s.x, s.z) * 0.92, top: y + s.y * 0.62 });
       if (y - sc * 0.4 < 0.3) this.stampDepth(X, Z, sc * 1.4, 0.05);
     };
-    for (let X = 316; X < 390; X += 2.2) {
+    for (let X = LAY.rock0 - 2; X < PIER_X; X += 2.2) {
       const sz = shoreZ(X);
       for (let k = 0; k < 3; k++) {
         const Z = sz - 6 + r() * 9;
@@ -717,12 +767,13 @@ export class World {
       }
     }
     // 바다 위 작은 바위섬
-    [[250, -330, 9], [270, -345, 6], [520, -260, 7]].forEach(([X, Z, sc]) => {
+    [[250, -330, 9], [270, -345, 6], [520, -260, 7], [700, -300, 8]].forEach(([X, Z, sc]) => {
       for (let i = 0; i < 4; i++) add(X + (r() - 0.5) * sc, Z + (r() - 0.5) * sc, sc * (0.5 + r() * 0.5), -0.2);
     });
     im.instanceMatrix.needsUpdate = true;
     this.scene.add(im);
     this.rockMesh = im;
+    this.walkMeshes.push(im);
 
     // 실제 스캔한 해안 바위 (Poly Haven, CC0)
     if (A && A.models.rockCluster) {
@@ -736,23 +787,25 @@ export class World {
         q.setFromEuler(new THREE.Euler(0, r() * 6.28, 0));
         m4.compose(pp.set(X, y, Z), q, s.set(sc, sc * (0.8 + r() * 0.5), sc));
         cl.setMatrixAt(cl.count++, m4);
+        this.rockTops.push({ X, Z, rad: 3.3 * sc, top: y + 1.25 * s.y });
         this.stampDepth(X, Z, 4 * sc, 0.05);
       };
-      for (let X = 320; X < 386; X += 7 + r() * 5) put(X, shoreZ(X) - 2 - r() * 6, 0.7 + r() * 0.6, -0.5 - r() * 0.4);
+      for (let X = LAY.rock0 + 2; X < PIER_X - 6; X += 7 + r() * 5) put(X, shoreZ(X) - 2 - r() * 6, 0.7 + r() * 0.6, -0.5 - r() * 0.4);
       if (this.line === 'west') for (let i = 0; i < 8; i++) { const X = 195 + r() * 110; put(X, shoreZ(X) - 1 - r() * 5, 0.35 + r() * 0.4, -0.3); }
       cl.instanceMatrix.needsUpdate = true;
       this.scene.add(cl);
+      this.walkMeshes.push(cl);
     }
     if (A && A.models.rockShelf) {
       const src = A.models.rockShelf;
       const sh = new THREE.Mesh(src.geometry, src.material.clone());
       if (this.line === 'east') sh.material.color.set('#d9c4a4');
       sh.scale.setScalar(0.55);
-      sh.position.set(352, -0.6, shoreZ(352) - 8);
+      sh.position.set(500, -0.6, shoreZ(500) - 8);
       sh.rotation.y = 0.4;
       sh.receiveShadow = true;
       this.scene.add(sh);
-      for (let X = 336; X < 368; X += 3) this.stampDepth(X, shoreZ(352) - 8 + (r() - 0.5) * 10, 5, 0.1);
+      for (let X = 484; X < 516; X += 3) this.stampDepth(X, shoreZ(500) - 8 + (r() - 0.5) * 10, 5, 0.1);
     }
   }
 
@@ -837,6 +890,122 @@ export class World {
     scene.add(rope);
   }
 
+  // ── 몽돌 해변 + 절벽 해안 데크길 + 촛대바위 + 오가는 배 ──
+  buildCoveAndDeck() {
+    const scene = this.scene;
+    const r = rng(this.line === 'west' ? 91 : 81);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), tint = new THREE.Color();
+    // 몽돌 (둥글고 매끈한 돌)
+    const stone = new THREE.SphereGeometry(1, 10, 8);
+    const T = this.assets && this.assets.tex.rock;
+    const sm = new THREE.MeshStandardMaterial(T ? { map: T.map, normalMap: T.normal, roughness: 0.55 } : { roughness: 0.55 });
+    const stones = new THREE.InstancedMesh(stone, sm, 1800);
+    stones.receiveShadow = stones.castShadow = true;
+    stones.count = 0;
+    for (let i = 0; i < 1800; i++) {
+      const X = LAY.peb0 + r() * (LAY.deck0 - LAY.peb0 - 4);
+      const dz = -2 + r() * 18;
+      const Z = shoreZ(X) + dz;
+      const sc = 0.08 + r() * r() * 0.28;
+      q.setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3));
+      sv.set(sc * (1.2 + r() * 0.5), sc * 0.55, sc);
+      m4.compose(pv.set(X, heightAt(X, Z) + sc * 0.25, Z), q, sv);
+      stones.setMatrixAt(stones.count, m4);
+      const g = 0.35 + r() * 0.5;
+      tint.setRGB(g * (0.95 + r() * 0.15), g * (0.92 + r() * 0.1), g * (0.9 + r() * 0.12));
+      stones.setColorAt(stones.count, tint);
+      stones.count++;
+    }
+    stones.instanceMatrix.needsUpdate = true;
+    scene.add(stones);
+    // 떠밀려온 나무
+    const logM = new THREE.MeshStandardMaterial({ color: '#a89580', roughness: 1, map: this.assets ? this.assets.tex.bark.map : null });
+    for (let i = 0; i < 5; i++) {
+      const X = LAY.peb0 + 8 + r() * 55, Z = shoreZ(X) + 4 + r() * 6;
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 2.5 + r() * 2, 8), logM);
+      log.rotation.set(Math.PI / 2, 0, r() * 3);
+      log.position.set(X, heightAt(X, Z) + 0.15, Z);
+      log.castShadow = true;
+      scene.add(log);
+    }
+
+    // 해안 데크길: 나무 판, 기둥, 난간
+    const wood = new THREE.MeshStandardMaterial({ color: '#9b7652', roughness: 0.85, map: TX.woodTexture() });
+    const railM = new THREE.MeshStandardMaterial({ color: '#7d5c3e', roughness: 0.8 });
+    const x0 = LAY.deck0 - 6, x1 = LAY.deck1 + 4;
+    const seg = 2;
+    for (let X = x0; X < x1; X += seg) {
+      const y0 = deckY(X), y1 = deckY(X + seg);
+      const board = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(seg, y1 - y0) + 0.05, 0.12, DECK_Z1 - DECK_Z0), wood);
+      board.position.set(X + seg / 2, (y0 + y1) / 2 - 0.06, (DECK_Z0 + DECK_Z1) / 2);
+      board.rotation.z = Math.atan2(y1 - y0, seg);
+      board.receiveShadow = board.castShadow = true;
+      scene.add(board);
+      this.walkMeshes.push(board);
+      if (Math.round(X) % 4 === 0) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 8, 6), railM);
+        post.position.set(X, y0 - 4.1, DECK_Z0 + 0.2);
+        scene.add(post);
+        const rp = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.05, 0.08), railM);
+        rp.position.set(X, y0 + 0.5, DECK_Z0 + 0.05);
+        rp.castShadow = true;
+        scene.add(rp);
+      }
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(seg, y1 - y0) + 0.02, 0.07, 0.1), railM);
+      rail.position.set(X + seg / 2, (y0 + y1) / 2 + 1.0, DECK_Z0 + 0.05);
+      rail.rotation.z = board.rotation.z;
+      scene.add(rail);
+    }
+    // 촛대바위 (바다에 솟은 바위기둥)
+    const pillarGeo = indexGeo(new THREE.CylinderGeometry(1, 1.4, 1, 14, 10));
+    {
+      const p = pillarGeo.attributes.position, v = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        const n = 0.75 + vnoise(v.x * 2 + v.y * 3, v.z * 2 + v.y * 5) * 0.5;
+        p.setXYZ(i, v.x * n * (1 - (v.y + 0.5) * 0.35), v.y, v.z * n * (1 - (v.y + 0.5) * 0.35));
+      }
+      pillarGeo.computeVertexNormals();
+    }
+    const pm = this.rockMesh ? this.rockMesh.material.clone() : new THREE.MeshStandardMaterial({ color: '#8a7a68' });
+    pm.vertexColors = false;
+    pm.color.set(this.line === 'west' ? '#6a5a50' : '#b9a588');
+    [[LAY.deck0 + 18, -22, 2.2, 15], [LAY.deck0 + 30, -30, 1.4, 9], [LAY.deck0 + 52, -19, 1.8, 12], [LAY.deck0 + 62, -36, 3, 7]].forEach(([X, Z, rad, h]) => {
+      const pl = new THREE.Mesh(pillarGeo, pm);
+      pl.scale.set(rad, h, rad);
+      pl.position.set(X, h / 2 - 2, Z);
+      pl.rotation.y = r() * 6;
+      pl.castShadow = pl.receiveShadow = true;
+      scene.add(pl);
+      this.stampDepth(X, Z, rad * 2.2, 0.05);
+      // 꼭대기의 작은 소나무
+      if (h > 10) {
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(rad * 0.9, 10, 8), new THREE.MeshStandardMaterial({ color: '#2f4a2a', roughness: 1 }));
+        crown.scale.y = 0.55;
+        crown.position.set(X, h - 1.6, Z);
+        scene.add(crown);
+      }
+    });
+    // 수평선을 오가는 배와 부표
+    this.sailing = [];
+    for (let i = 0; i < 4; i++) {
+      const b = makeBoat();
+      b.scale.setScalar(0.8 + r() * 0.6);
+      b.userData = { z: -140 - r() * 260, sp: (r() < 0.5 ? -1 : 1) * (2 + r() * 3), x0: r() * 800 };
+      b.rotation.y = b.userData.sp > 0 ? -Math.PI / 2 : Math.PI / 2;
+      scene.add(b);
+      this.sailing.push(b);
+    }
+    const buoyM = new THREE.MeshStandardMaterial({ color: '#ff6a1a', roughness: 0.5 });
+    this.buoys = [];
+    for (let i = 0; i < 10; i++) {
+      const bu = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 10), buoyM);
+      bu.userData = { X: 200 + r() * 420, Z: -45 - r() * 70, ph: r() * 6 };
+      scene.add(bu);
+      this.buoys.push(bu);
+    }
+  }
+
   // ── 방파제: 테트라포드 + 빨간 등대 (서해는 노란 부잔교도) ──
   buildPier() {
     const scene = this.scene;
@@ -850,12 +1019,13 @@ export class World {
       pierM = new THREE.MeshStandardMaterial({ map: cl(T.map, 24, 3), normalMap: cl(T.normal, 24, 3), roughnessMap: cl(T.arm, 24, 3), color: '#f2efe8', roughness: 1 });
       ct = pierM.map;
     }
-    const pier = new THREE.Mesh(new THREE.BoxGeometry(96, 6, 10.6), pierM);
-    pier.position.set(PIER_X + 48, PIER_TOP - 3, -0.3);
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(PIER_LEN, 6, 10.6), pierM);
+    pier.position.set(PIER_X + PIER_LEN / 2, PIER_TOP - 3, -0.3);
     pier.castShadow = pier.receiveShadow = true;
+    this.walkMeshes.push(pier);
     scene.add(pier);
-    const para = new THREE.Mesh(new THREE.BoxGeometry(96, 0.9, 0.7), new THREE.MeshStandardMaterial({ map: ct, color: '#c4c2bb' }));
-    para.position.set(PIER_X + 48, PIER_TOP + 0.45, -5.2);
+    const para = new THREE.Mesh(new THREE.BoxGeometry(PIER_LEN, 0.9, 0.7), new THREE.MeshStandardMaterial({ map: ct, color: '#c4c2bb' }));
+    para.position.set(PIER_X + PIER_LEN / 2, PIER_TOP + 0.45, -5.2);
     para.castShadow = true;
     scene.add(para);
     // 테트라포드 (다리 4개)
@@ -873,7 +1043,7 @@ export class World {
     im.castShadow = im.receiveShadow = true;
     im.count = 0;
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
-    for (let X = PIER_X - 2; X < PIER_X + 98; X += 2.2) {
+    for (let X = PIER_X - 2; X < PIER_X + PIER_LEN + 2; X += 2.2) {
       for (let row = 0; row < 3; row++) {
         const Z = -6.8 - row * 2.1 + (r() - 0.5);
         const y = -1.2 + row * -0.3 + r() * 1.4 - (row === 2 ? 0.6 : 0);
@@ -887,7 +1057,7 @@ export class World {
     scene.add(im);
     // 빨간 등대
     const lh = new THREE.Group();
-    lh.position.set(PIER_X + 92, PIER_TOP, -1);
+    lh.position.set(PIER_X + PIER_LEN - 4, PIER_TOP, -1);
     const red = new THREE.MeshStandardMaterial({ color: '#d0302b', roughness: 0.6 });
     const white = new THREE.MeshStandardMaterial({ color: '#f1efe8', roughness: 0.7 });
     const add = (g, m, y) => { const o = new THREE.Mesh(g, m); o.position.y = y; o.castShadow = true; lh.add(o); return o; };
@@ -963,7 +1133,7 @@ export class World {
       hill(-200, -900, 200, 35, '#6b7768');
       // 육지에서 섬으로 이어지는 다리
       const deckM = new THREE.MeshStandardMaterial({ color: '#d9d8d2', roughness: 0.8 });
-      const A = new THREE.Vector3(505, 0, -2), B = new THREE.Vector3(548, 0, -170);
+      const A = new THREE.Vector3(665, 0, -2), B = new THREE.Vector3(708, 0, -170);
       const len = A.distanceTo(B), ang = Math.atan2(B.x - A.x, B.z - A.z);
       const deck = new THREE.Mesh(new THREE.BoxGeometry(8, 1.2, len), deckM);
       deck.position.set((A.x + B.x) / 2, 12, (A.z + B.z) / 2);
@@ -1092,6 +1262,12 @@ export class World {
     // 물고기
     this.fish = makeFish();
     scene.add(this.fish);
+    // 터치한 목적지 표시
+    this.marker = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.5, 32), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false }));
+    this.marker.rotation.x = -Math.PI / 2;
+    this.marker.renderOrder = 3;
+    this.marker.visible = false;
+    scene.add(this.marker);
     // 물보라 링
     this.rings = [];
     for (let i = 0; i < 6; i++) {
@@ -1370,12 +1546,13 @@ export class World {
     const fsh = st.fishing;
     const pose = fsh.pose(t);
     const fishingPose = pose.rod != null || pose.noRod;
-    const X = av.x * M;
     const P = this.player;
     P.group.visible = !st.hideAvatar;
     this.boat.visible = !!st.onBoat;
     this.mooredBoat.visible = !st.onBoat;
-    let ax = X, ay = groundY(X), az = 0;
+    if (av.X == null) this.placeAt(av, av.x);
+    let ax = av.X, ay = av.Y, az = av.Z;
+    if (st.hideAvatar) { ax = av.x * M; ay = groundY(ax); az = 0; }
     if (st.onBoat) {
       const b = this.boat;
       b.position.y = Math.sin(t * 1.3) * 0.15;
@@ -1383,22 +1560,45 @@ export class World {
       b.rotation.x = Math.sin(t * 1.1) * 0.025;
       ax = b.position.x; ay = 1.05 + b.position.y; az = b.position.z + 1.5;
     }
-    P.pose({ walking: av.walking, phase: av.phase, rodE: pose.rod != null ? -pose.rod : 1.25, bend: pose.bend || 0, noRod: !!pose.noRod });
+    P.pose({ walking: av.walking, phase: av.phase, rodE: pose.rod != null ? -pose.rod : 1.25, bend: pose.bend || 0, noRod: !!pose.noRod, t });
     P.group.position.set(ax, ay + P.bob, az);
-    const yawTarget = fishingPose || st.onBoat ? Math.PI : av.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-    P.group.rotation.y += angDiff(yawTarget, P.group.rotation.y) * Math.min(1, dt * 8);
+    const yawTarget = fishingPose || st.onBoat ? Math.PI : (av.yaw ?? Math.PI / 2);
+    P.group.rotation.y += angDiff(yawTarget, P.group.rotation.y) * Math.min(1, dt * 10);
     this.lamp.intensity = this.night ? 6 : 0;
+    // 목적지 표시
+    if (this.marker) {
+      const tg = av.target;
+      this.marker.visible = !!tg && !st.hideAvatar;
+      if (tg) {
+        this.marker.position.set(tg.X, tg.Y + 0.05, tg.Z);
+        const k = (t * 1.5) % 1;
+        this.marker.scale.setScalar(0.6 + k * 0.6);
+        this.marker.material.opacity = 0.9 * (1 - k);
+      }
+    }
 
     // NPC
     this.npcs.forEach(({ a, n }, i) => {
-      const nx = n.x * M;
+      if (n.X == null) {
+        n.X = n.x * M;
+        if (n.X > PIER_X) n.Z = -3.6;
+        else {
+          // 물가에서 가장 높은 바위 위 또는 물가 모래
+          n.Z = shoreZ(n.X) + 2.2;
+          let best = null;
+          for (const rt of this.rockTops) if (Math.abs(rt.X - n.X) < 8 && rt.Z > shoreZ(n.X) - 7 && (!best || rt.top > best.top)) best = rt;
+          if (best && best.top < 3) { n.X = best.X; n.Z = best.Z; }
+        }
+        n.Y = this.surfaceAt(n.X, n.Z).y;
+      }
+      const nx = n.X;
       const cyc = (t + n.seed) % 9;
       let e = 1.0;
       if (cyc < 0.6) e = 1.0 + 1.4 * (cyc / 0.6);
       else if (cyc < 0.9) e = 2.4 - 1.9 * ((cyc - 0.6) / 0.3);
       else e = 0.5 + Math.min(1, (cyc - 0.9) / 6) * 0.3;
-      a.pose({ rodE: e });
-      a.group.position.set(nx, groundY(nx), -1.5 - i * 0.5);
+      a.pose({ rodE: e, t: t + i });
+      a.group.position.set(nx, n.Y, n.Z);
       a.group.rotation.y = Math.PI;
       a.group.visible = true;
       if (!a.line) {
@@ -1410,7 +1610,7 @@ export class World {
         a.group.updateMatrixWorld(true);
         const tip = a.tipWorld(new THREE.Vector3());
         const k = Math.min(1, (cyc - 0.9) / 0.7);
-        const end = new THREE.Vector3(nx + 3, 0.02, shoreZ(nx) - 10 - 40 * k - n.seed * 2);
+        const end = new THREE.Vector3(nx + 3, 0.02, Math.min(n.Z, shoreZ(nx)) - 10 - 40 * k - n.seed * 2);
         if (nx > PIER_X) end.z = -14 - 40 * k;
         const mid = tip.clone().lerp(end, 0.5);
         mid.y += k < 1 ? 8 * (1 - k) : -1.5;
@@ -1419,9 +1619,29 @@ export class World {
       } else a.line.visible = false;
     });
 
+    // 바다 위의 배·부표
+    this.sailing.forEach((b) => {
+      const u = b.userData;
+      b.position.set(((u.x0 + t * u.sp) % 1400 + 1400) % 1400 - 400, Math.sin(t + u.x0) * 0.15, u.z);
+      b.rotation.z = Math.sin(t * 0.8 + u.x0) * 0.03;
+    });
+    this.buoys.forEach((bu) => { const u = bu.userData; bu.position.set(u.X, Math.sin(t * 1.2 + u.ph) * 0.12, u.Z); });
+
     // 낚시 소품
     this.updateFishing(st, t, ax, ay, az, pose);
 
+    if (this.caught) {
+      const c = this.caught;
+      const age = (performance.now() - c.userData.born) / 1000;
+      const b = c.userData.base;
+      if (c.userData.flat) {
+        const u = c.userData.bend;
+        u.t.value = t * 18; u.a.value = age < 8 ? 0.5 : 0.15;
+        const j = age < 8 ? Math.max(0, Math.sin(t * 9)) * 0.12 : 0;
+        c.position.set(b.x, b.y + 0.04 + j, b.z);
+        c.rotation.set(0, b.yaw, Math.sin(t * 7) * 0.2);
+      } else flop(c, age < 8 ? t : t * 0.3, b, c.userData.sizeM);
+    }
     // 카메라
     this.updateCamera(st, t, dt, ax, ay, az, fishingPose);
 
@@ -1449,39 +1669,218 @@ export class World {
   updateCamera(st, t, dt, ax, ay, az, fishing) {
     const cam = this.camera;
     const X = st.avatar.x * M;
-    const desiredPos = new THREE.Vector3(), desiredLook = new THREE.Vector3();
-    const portrait = this.portrait ? 1.35 : 1;
     if (st.hideAvatar) {
       // 입장 화면: 해변을 천천히 훑는 풍경
-      desiredPos.set(X - 4, 3.2, 9);
-      desiredLook.set(X + 6, 1.2, -25);
+      const desiredPos = new THREE.Vector3(X - 4, 3.2, 9), desiredLook = new THREE.Vector3(X + 6, 1.2, -25);
       cam.position.lerp(desiredPos, Math.min(1, dt * 1.5));
       this.camLook.lerp(desiredLook, Math.min(1, dt * 1.5));
       cam.lookAt(this.camLook);
       return;
     }
-    if (st.avatar.walking) this.camDir += (st.avatar.dir - this.camDir) * Math.min(1, dt * 1.6);
-    const cd = this.camDir;
-    if (st.onBoat) {
-      desiredPos.set(ax - 2.5, ay + 2.6, az + 6.5 * portrait);
-      desiredLook.set(ax + 0.5, 0.6, az - 25);
-    } else {
-      const sea = Math.max(smooth(150, 186, X), fishing ? 1 : 0);
-      // 숲: 아바타 뒤에서 길을 따라 바라봄 / 바다: 바다를 정면으로
-      const fp = new THREE.Vector3(ax - 6.2 * cd * portrait, ay + 2.3, az + 2.4);
-      const fl = new THREE.Vector3(ax + 9 * cd, ay + 1.7, az - 0.6);
-      const bp = new THREE.Vector3(ax - 2.8, ay + (fishing ? 2.9 : 2.2), az + (fishing ? 8 : 6.6) * portrait);
-      const bl = new THREE.Vector3(ax + 1.6, ay + (fishing ? 0.3 : 1.1), az - (fishing ? 30 : 12));
-      desiredPos.copy(fp).lerp(bp, sea);
-      desiredLook.copy(fl).lerp(bl, sea);
-      // 땅속으로 들어가지 않게
-      desiredPos.y = Math.max(desiredPos.y, heightAt(desiredPos.x, desiredPos.z) + 1.2);
+    const o = this.orbit;
+    const k = Math.min(1, dt * 6);
+    o.yaw += angDiff(o.tYaw, o.yaw) * k;
+    o.pitch += (o.tPitch - o.pitch) * k;
+    o.dist += (o.tDist - o.dist) * Math.min(1, dt * 5);
+    const look = new THREE.Vector3(ax, ay + (o.dist < 5 ? 0.85 : 0.6 + Math.min(1, o.dist / 60) * 0.4), az);
+    let dist = o.dist, pitch = o.pitch, yaw = o.yaw;
+    // 손맛 순간: 잡은 물고기를 가까이서
+    if (performance.now() < this.catchCamUntil && this.catchSpot) {
+      look.copy(this.catchSpot).add(new THREE.Vector3(0, 0.1, 0));
+      dist = Math.max(1.3, (this.caught ? this.caught.userData.sizeM : 0.5) * 2.6); pitch = 0.62; yaw = o.yaw;
     }
-    const k = Math.min(1, dt * 3);
-    if (this.snapCam) { cam.position.copy(desiredPos); this.camLook.copy(desiredLook); this.snapCam = false; }
-    cam.position.lerp(desiredPos, k);
-    this.camLook.lerp(desiredLook, k);
+    const portrait = this.portrait ? 1.3 : 1;
+    dist *= portrait;
+    const pos = new THREE.Vector3(
+      look.x + Math.sin(yaw) * Math.cos(pitch) * dist,
+      look.y + Math.sin(pitch) * dist,
+      look.z + Math.cos(yaw) * Math.cos(pitch) * dist,
+    );
+    // 절벽·언덕이 시야를 가리면 카메라를 앞으로 당긴다
+    const seg = new THREE.Vector3();
+    for (let i = 1; i <= 16; i++) {
+      seg.lerpVectors(look, pos, i / 16);
+      if ((i / 16) * dist < 1.4) continue;
+      if (Math.max(heightAt(seg.x, seg.z), 0) + 0.35 > seg.y) {
+        const f = Math.max(0.12, (i - 1) / 16);
+        pos.lerpVectors(look, pos, f);
+        // 절벽에 막히면 (직접 돌리는 중이 아닐 때) 바다 쪽으로 카메라를 돌린다
+        if (f < 0.5 && performance.now() - o.touched > 1500) o.tYaw += angDiff(-2.5, o.tYaw) * Math.min(1, dt * 2);
+        break;
+      }
+    }
+    const floor = Math.max(heightAt(pos.x, pos.z), 0) + 0.4;
+    if (pos.y < floor) pos.y = floor;
+    if (this.snapCam) { cam.position.copy(pos); this.camLook.copy(look); this.snapCam = false; }
+    cam.position.lerp(pos, Math.min(1, dt * 8));
+    this.camLook.lerp(look, Math.min(1, dt * 8));
     cam.lookAt(this.camLook);
+  }
+
+  // ── 카메라 조작 API ──
+  orbitBy(dx, dy) {
+    const o = this.orbit;
+    o.tYaw -= dx * 0.006;
+    o.tPitch = clamp(o.tPitch + dy * 0.005, 0.04, 1.5);
+    o.touched = performance.now();
+  }
+  zoomBy(f) {
+    const o = this.orbit;
+    o.tDist = clamp(o.tDist * f, 2.2, 360);
+    if (o.tDist > 60) o.tPitch = Math.max(o.tPitch, 0.5 + Math.min(0.9, (o.tDist - 60) / 250));
+    o.touched = performance.now();
+  }
+  viewPreset(name) {
+    const o = this.orbit;
+    if (name === 'near') { o.tDist = 3.6; o.tPitch = 0.22; }
+    else if (name === 'normal') { o.tDist = 8; o.tPitch = 0.32; }
+    else if (name === 'sky') { o.tDist = 170; o.tPitch = 1.2; }
+    else if (name === 'sea') { o.tYaw = -0.35; o.tPitch = 0.3; o.tDist = Math.min(Math.max(o.tDist, 7), 14); }
+  }
+  // 낚시할 땐 바다가 보이게 (사용자가 방금 돌린 게 아니면)
+  focusSea() {
+    if (performance.now() - this.orbit.touched > 2500) this.viewPreset('sea');
+  }
+
+  // ── 걷기: 서 있을 수 있는 높이와 충돌 ──
+  surfaceAt(X, Z) {
+    let y = heightAt(X, Z), kind = 'ground';
+    const dy = deckY(X);
+    if (dy != null && Z >= DECK_Z0 && Z <= DECK_Z1 && dy > y - 0.4) { y = dy; kind = 'wood'; }
+    if (X >= PIER_X - 0.5 && X <= PIER_X + PIER_LEN && Z >= -5.4 && Z <= 5) { y = PIER_TOP; kind = 'concrete'; }
+    for (const rt of this.rockTops) {
+      const dx = X - rt.X, dz = Z - rt.Z;
+      if (Math.abs(dx) > rt.rad || Math.abs(dz) > rt.rad) continue;
+      const d2 = (dx * dx + dz * dz) / (rt.rad * rt.rad);
+      if (d2 >= 1) continue;
+      const g = heightAt(rt.X, rt.Z);
+      const yr = g + (rt.top - g) * Math.sqrt(1 - d2);
+      if (yr > y) { y = yr; kind = 'rock'; }
+    }
+    return { y, kind };
+  }
+
+  canStand(from, X, Z, surf) {
+    if (X < -60 || X > PIER_X + PIER_LEN - 1 || Z < -95 || Z > 65) return false;
+    for (const c of this.colliders) {
+      const dx = X - c.X, dz = Z - c.Z;
+      if (dx * dx + dz * dz < c.r * c.r) return false;
+    }
+    if (surf.kind === 'concrete' && Z < -4.7) return false; // 방파제 난간
+    if (from.kind === 'wood' && surf.kind !== 'wood' && Z < DECK_Z0 + 0.3) return false; // 데크 난간
+    if (from.kind === 'wood' && surf.kind === 'wood' && Z < DECK_Z0 + 0.3) return false;
+    if (surf.kind === 'ground' && surf.y < -0.55) return false; // 깊은 물
+    const rise = surf.y - from.y;
+    const limit = surf.kind === 'rock' ? 0.55 : surf.kind === 'concrete' || surf.kind === 'wood' ? 0.6 : 0.32;
+    if (rise > limit) return false; // 절벽·너무 높은 턱
+    return true;
+  }
+
+  placeAt(av, xpx, zPref) {
+    const X = clamp(xpx * M, -50, PIER_X + PIER_LEN - 3);
+    let Z = zPref;
+    if (Z == null) {
+      if (X < 120) Z = 0;
+      else if (X > PIER_X) Z = -1.5;
+      else if (deckY(X) != null && X > LAY.deck0 && X < LAY.deck1 - 4) Z = -1.6;
+      else Z = shoreZ(X) + 4;
+    }
+    const surf = this.surfaceAt(X, Z);
+    av.X = X; av.Z = Z; av.Y = surf.y; av.kind = surf.kind;
+    av.x = X / M;
+    av.target = null;
+    if (av.yaw == null) av.yaw = Math.PI / 2;
+    if (surf.kind === 'wood') { this.orbit.tYaw = this.orbit.yaw = -2.5; }
+  }
+
+  // input: {dx, dz} 월드 방향(키보드) 또는 av.target(터치한 곳)
+  stepAvatar(av, dt, input) {
+    let vx = 0, vz = 0;
+    if (av.target) {
+      vx = av.target.X - av.X; vz = av.target.Z - av.Z;
+      const d = Math.hypot(vx, vz);
+      if (d < 0.2) { av.target = null; vx = vz = 0; }
+      else { vx /= d; vz /= d; }
+    }
+    if (input && (input.dx || input.dz)) { vx = input.dx; vz = input.dz; av.target = null; }
+    const moving = !!(vx || vz);
+    let stepEvent = null;
+    if (moving) {
+      const speed = av.run ? 7 : 4.2;
+      const step = speed * dt;
+      const from = { y: av.Y, kind: av.kind };
+      const tryMove = (mx, mz) => {
+        const X = av.X + mx * step, Z = av.Z + mz * step;
+        const surf = this.surfaceAt(X, Z);
+        if (!this.canStand(from, X, Z, surf)) return false;
+        av.X = X; av.Z = Z; av.kind = surf.kind; av.Ytarget = surf.y;
+        return true;
+      };
+      let ok = tryMove(vx, vz);
+      // 나무·바위를 비껴 미끄러지듯 돌아간다
+      if (!ok) ok = tryMove(vx, 0) || tryMove(0, vz) || tryMove(vx * 0.7 - vz * 0.7, vz * 0.7 + vx * 0.7) || tryMove(vx * 0.7 + vz * 0.7, vz * 0.7 - vx * 0.7);
+      if (!ok) { av.blocked = (av.blocked || 0) + dt; if (av.blocked > 0.35) { av.target = null; av.blocked = 0; } }
+      else av.blocked = 0;
+      av.walking = ok;
+      if (ok) {
+        av.yaw += angDiff(Math.atan2(vx, vz), av.yaw) * Math.min(1, dt * 12);
+        const prev = Math.sign(Math.sin(av.phase));
+        av.phase += dt * (av.run ? 13 : 10);
+        if (Math.sign(Math.sin(av.phase)) !== prev) stepEvent = av.kind;
+      }
+    } else av.walking = false;
+    // 높이를 부드럽게 (바위 위로 폴짝)
+    const ty = av.Ytarget ?? av.Y;
+    av.Y += (ty - av.Y) * Math.min(1, dt * (ty > av.Y ? 14 : 9));
+    av.x = av.X / M;
+    if (av.X > 0 && this.feet && stepEvent && av.kind === 'ground') this.addFootprint3(av.X, av.Z, av.yaw, Math.sin(av.phase) > 0);
+    return stepEvent;
+  }
+
+  pickGround(px, py) {
+    const rect = this.cv.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((px - rect.left) / rect.width) * 2 - 1, -((py - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const objs = [this.terrain, ...this.walkMeshes];
+    const hit = this.raycaster.intersectObjects(objs, false)[0];
+    if (!hit) return null;
+    return { X: hit.point.x, Z: hit.point.z, Y: this.surfaceAt(hit.point.x, hit.point.z).y };
+  }
+
+  addFootprint3(X, Z, yaw, foot) {
+    if (X < 105 || X > LAY.deck0 - 4) return;
+    const i = this.footIdx++ % 120;
+    const side = foot ? 0.1 : -0.1;
+    const fx = X + Math.cos(yaw) * side, fz = Z - Math.sin(yaw) * side;
+    const m4 = new THREE.Matrix4().compose(
+      new THREE.Vector3(fx, heightAt(fx, fz) + 0.02, fz),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw),
+      new THREE.Vector3(1, 1, 1),
+    );
+    this.feet.setMatrixAt(i, m4);
+    this.feet.instanceMatrix.needsUpdate = true;
+  }
+
+  // 잡은 물고기를 바닥에 내려놓고 카메라를 가까이
+  showCatch(fish, ax, ay, az) {
+    if (this.caught) this.scene.remove(this.caught);
+    const f = makeRealFish(fish.name, Math.floor(Math.random() * 1000));
+    const sizeM = (fish.size || 40) / 100;
+    f.scale.setScalar(sizeM);
+    f.userData.sizeM = sizeM;
+    f.userData.flat = !!fishLook(fish.name).flat;
+    const yaw = this.orbit.yaw;
+    const X = ax + Math.sin(yaw) * 0.9 + Math.cos(yaw) * 0.25, Z = az + Math.cos(yaw) * 0.9 - Math.sin(yaw) * 0.25;
+    f.userData.base = { x: X, y: this.surfaceAt(X, Z).y, z: Z, yaw };
+    f.userData.born = performance.now();
+    this.scene.add(f);
+    this.caught = f;
+    this.catchSpot = new THREE.Vector3(X, f.userData.base.y, Z);
+    this.catchCamUntil = performance.now() + (this.catchCamMs || 3200);
+  }
+  clearCatch() {
+    if (this.caught) { this.scene.remove(this.caught); this.caught = null; }
+    this.catchCamUntil = 0;
   }
 
   updateFishing(st, t, ax, ay, az, pose) {
@@ -1497,14 +1896,14 @@ export class World {
     P.group.updateMatrixWorld(true);
     let tip = P.tipWorld(new THREE.Vector3());
     const boat = st.onBoat;
-    const shore = boat ? az - 5 : shoreZ(ax) - 1.5;
+    const shore = boat ? az - 5 : Math.min(az - 1.5, shoreZ(ax) - 1.5);
     const reach = boat ? 38 : 88;
     const waterPos = (d) => new THREE.Vector3(ax + 1 + d * 6, 0.03, shore - Math.pow(d, 0.9) * reach);
     // 원투: 받침대
     if (f.mode === 'far' && (s === 'waiting' || s === 'bite')) {
       this.stand.visible = true;
       const sx = ax + 0.9, sz = az - 0.6;
-      this.stand.position.set(sx, boat ? ay : groundY(sx * 1) , sz);
+      this.stand.position.set(sx, boat ? ay : this.surfaceAt(sx, sz).y, sz);
       this.stand.rotation.y = 0;
       this.standRod.rotation.z = s === 'bite' ? Math.sin(t * 40) * 0.02 : 0;
       this.stand.updateMatrixWorld(true);
@@ -1517,12 +1916,11 @@ export class World {
       lp = tip.clone().lerp(end, k);
       lp.y += Math.sin(k * Math.PI) * (6 + f.target * 16);
     } else if (s === 'result') {
-      this.fish.visible = true;
-      this.fish.position.set(tip.x, tip.y - 0.75, tip.z);
-      this.fish.rotation.set(0, Math.PI / 2, Math.PI / 2 + Math.sin(t * 10) * 0.3);
-      const k = (f.fish && f.fish.size) || 40;
-      this.fish.scale.setScalar(k / 45);
-      this.setLine(tip, new THREE.Vector3(tip.x, tip.y - 0.45, tip.z), 0);
+      if (this.caught) {
+        const c = this.caught;
+        const mouth = new THREE.Vector3(-0.45 * c.userData.sizeM, 0, 0).applyMatrix4(c.matrixWorld);
+        this.setLine(tip, mouth, 0.3);
+      }
       return;
     } else {
       lp = waterPos(f.d);

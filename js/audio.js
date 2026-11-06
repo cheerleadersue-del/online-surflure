@@ -25,6 +25,10 @@ export class SoundScape {
     comp.ratio.value = 4;
     this.master.connect(comp).connect(ctx.destination);
 
+    // 바다 소리 묶음 (캐스팅할 때 잠깐 줄인다)
+    this.seaBus = ctx.createGain();
+    this.seaBus.gain.value = 1;
+    this.seaBus.connect(this.master);
     this.white = this._noise('white');
     this.pink = this._noise('pink');
     this.brown = this._noise('brown');
@@ -34,10 +38,10 @@ export class SoundScape {
     // 솔잎 사각임: 고역 노이즈
     this.needles = this._loop(this.white, 'highpass', 4200, 0.7);
     // 파도 몸통(저역) + 포말(고역)
-    this.waveBody = this._loop(this.brown, 'lowpass', 700, 0.7);
-    this.waveFoam = this._loop(this.white, 'bandpass', 2600, 0.5);
+    this.waveBody = this._loop(this.brown, 'lowpass', 700, 0.7, this.seaBus);
+    this.waveFoam = this._loop(this.white, 'bandpass', 2600, 0.5, this.seaBus);
     // 바닷바람(해변의 넓은 공기감)
-    this.seaAir = this._loop(this.pink, 'lowpass', 380, 0.4);
+    this.seaAir = this._loop(this.pink, 'lowpass', 380, 0.4, this.seaBus);
   }
 
   setMuted(m) {
@@ -68,7 +72,7 @@ export class SoundScape {
     return buf;
   }
 
-  _loop(buf, type, freq, q) {
+  _loop(buf, type, freq, q, dest) {
     const ctx = this.ctx;
     const src = ctx.createBufferSource();
     src.buffer = buf;
@@ -80,7 +84,7 @@ export class SoundScape {
     f.Q.value = q;
     const g = ctx.createGain();
     g.gain.value = 0;
-    src.connect(f).connect(g).connect(this.master);
+    src.connect(f).connect(g).connect(dest || this.master);
     src.start(0, Math.random() * 3);
     return { src, f, g };
   }
@@ -133,6 +137,12 @@ export class SoundScape {
     if (m.gull > 0.2 && t >= this._nextGull) {
       this._gull(m.gull);
       this._nextGull = t + 5 + Math.random() * 12;
+    }
+    // 드랙: 물고기가 줄을 차고 나갈 때 '지이이익' 래칫 소리
+    if (this._dragOn && t >= this._nextDrag) {
+      const rate = 26 + this._dragK * 30;
+      this._burst(this.white, 'bandpass', 2600 + Math.random() * 900, 7, 0.07 + this._dragK * 0.05, 0.001, 0.014);
+      this._nextDrag = t + 1 / rate;
     }
     if (this._reelOn && t >= this._nextTick) {
       this._click(0.05, 3200 + Math.random() * 600);
@@ -238,6 +248,15 @@ export class SoundScape {
         this._burst(this.brown, 'lowpass', 260, 1, 0.35, 0.003, 0.09);
         this._burst(this.white, 'bandpass', 1800, 3, 0.04, 0.002, 0.03);
         break;
+      case 'pebble':
+        // 몽돌끼리 부딪히는 '자르륵'
+        for (let i = 0; i < 3; i++) this._burst(this.white, 'bandpass', 1800 + Math.random() * 1600, 5, 0.09, 0.002, 0.03, i * 0.03);
+        this._burst(this.brown, 'lowpass', 350, 1, 0.18, 0.003, 0.08);
+        break;
+      case 'wood':
+        this._tone('sine', 140 + Math.random() * 30, 90, 0.22, 0.002, 0.12);
+        this._burst(this.white, 'bandpass', 900, 2, 0.06, 0.002, 0.05);
+        break;
       case 'concrete':
         this._burst(this.brown, 'lowpass', 400, 1, 0.3, 0.002, 0.06);
         this._click(0.06, 2800);
@@ -247,10 +266,38 @@ export class SoundScape {
     }
   }
 
+  // 바다 소리를 잠깐 낮춘다
+  duck(depth = 0.25, hold = 1.4) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, g = this.seaBus.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(depth, t + 0.12);
+    g.setValueAtTime(depth, t + hold);
+    g.linearRampToValueAtTime(1, t + hold + 1.2);
+  }
+
   cast() {
     if (!this.ctx) return;
-    const f = this._burst(this.white, 'bandpass', 600, 1.5, 0.3, 0.05, 0.35);
-    f.frequency.exponentialRampToValueAtTime(3500, this.ctx.currentTime + 0.35);
+    this.duck(0.2, 1.6);
+    // 낚싯대가 공기를 가르는 소리
+    const f = this._burst(this.white, 'bandpass', 600, 1.5, 0.35, 0.04, 0.3);
+    f.frequency.exponentialRampToValueAtTime(3500, this.ctx.currentTime + 0.3);
+    // 스풀에서 줄이 풀려나가는 '촤라라락' 드랙 소리 (점점 느려짐)
+    let w = 0.08;
+    for (let i = 0; i < 46; i++) {
+      w += 0.012 + i * 0.0009;
+      this._burst(this.white, 'bandpass', 3000 + Math.random() * 1500, 6, 0.09 * (1 - i / 60), 0.001, 0.012, w);
+    }
+    const hiss = this._burst(this.pink, 'highpass', 3500, 0.7, 0.08, 0.05, 1.1, 0.08);
+    hiss.frequency.linearRampToValueAtTime(1800, this.ctx.currentTime + 1.2);
+  }
+
+  drag(on, k = 0.5) {
+    if (!this.ctx) return;
+    if (on && !this._dragOn) { this._nextDrag = this.ctx.currentTime; this.duck(0.45, 0.8); }
+    this._dragOn = on;
+    this._dragK = k;
   }
 
   plop(far = 0.5) {

@@ -27,6 +27,7 @@ export class Fishing {
     this.msg = '';
     this.splashes = [];
     this.audio.reel(false);
+    if (this.audio.drag) this.audio.drag(false);
     if (notify) this.emit();
   }
 
@@ -116,6 +117,7 @@ export class Fishing {
   finish(ok, msg) {
     this.state = ok ? 'result' : 'idle';
     this.audio.reel(false);
+    this.audio.drag(false);
     this.msg = msg;
     if (ok) {
       this.audio.success();
@@ -198,6 +200,7 @@ export class Fishing {
       }
       const running = this.run > 0;
       if (running) this.run -= dt;
+      this.audio.drag(running, f.str);
       const pull = (running ? 0.55 : 0.12) * f.str;
       if (this.pressed) {
         this.tension += dt * (0.18 + pull * 1.6);
