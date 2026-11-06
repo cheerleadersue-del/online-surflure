@@ -34,6 +34,7 @@ const METHOD_NAME = { ...Object.fromEntries(Object.values(METHODS).map((m) => [m
 // ── 상태 ──
 const audio = new SoundScape();
 const scene = new World($('#world'));
+scene.audioHook = (d) => audio.boil(d);
 let preview = null;
 const store = new Store();
 const profile = load('surflure.profile', {});
@@ -65,6 +66,7 @@ const fishing = new Fishing(audio, {
   onHit: (f) => onHit(f),
   onFight: (info) => onFight(info),
   onFightEnd: (ok) => onFightEnd(ok),
+  onJerk: () => audio.jerk && audio.jerk(),
 });
 st.fishing = fishing;
 const records = new Records();
@@ -213,6 +215,7 @@ function enterSea() {
     history.replaceState(null, '', `?line=${st.line}&point=${st.point.id}`);
     net.connect(st.point.id, { name: st.look.name, look: st.look });
     chatLog(`${st.point.name}에 도착했어요. 💬 채팅으로 인사해 보세요!`, 'sys');
+    setTimeout(() => toast('🕊️ 하늘 뷰로 보일링(물고기 떼)을 찾아보세요! 표시를 누르면 그 앞으로 이동해요'), 4200);
   });
 }
 
@@ -333,6 +336,18 @@ const endPointer = (e) => {
   if (!wasTap || e.type === 'pointercancel') return;
   const id = scene.hitFlag(e.clientX, e.clientY);
   if (id) { audio.ui(); openDetail(id); return; }
+  const boil = scene.hitBoil(e.clientX, e.clientY);
+  if (boil) {
+    if (fishing.busy && fishing.state !== 'result') return toast('채비를 회수한 뒤 이동하세요.');
+    audio.ui();
+    fade(() => { fishing.reset(); scene.clearCatch(); scene.goToBoil(st.avatar, boil); }, 350);
+    setTimeout(() => {
+      const dist = Math.max(10, Math.round(Math.abs(boil.Z - st.avatar.Z)));
+      const need = Math.round(Math.min(100, Math.max(10, ((dist / 88) / fishing.gear.rod.cast - 0.3) / 0.68 * 100)));
+      toast(`🐟 보일링까지 약 ${dist}m — 캐스팅 힘 ${need}% 정도로 던져보세요!`);
+    }, 500);
+    return;
+  }
   if (st.onBoat) return toast('배 위에서는 움직일 수 없어요. ⚓ 하선하기를 눌러주세요.');
   if (fishing.busy && fishing.state !== 'result') return toast('낚시 중이에요. 회수하거나 랜딩 후 이동하세요.');
   const g = scene.pickGround(e.clientX, e.clientY);
@@ -422,6 +437,7 @@ function renderFishUI(ui) {
 // ── 잡은 물고기 ──
 let pendingCatch = null;
 function showCatch(f) {
+  setTimeout(() => shout(pick(['나이스!', '와~!', '우와 대박!', '오예~!', '됐다!', '와 크다!', '나이스 손맛!', '역시~!']), { cut: true, pitch: 1.35, rate: 1.1 }), 150);
   pendingCatch = f;
   net.sendEvent('land', { fish: f.name, size: f.size });
   submitRecord(f);
@@ -743,7 +759,12 @@ function frame(now) {
     }
     // 카메라는 부드럽게 따라감
     st.camX += (av.x - st.camX) * Math.min(1, dt * 4);
-    fishing.update(dt, { line: st.line, date, onBoat: st.onBoat });
+    fishing.update(dt, { line: st.line, date, onBoat: st.onBoat, boil: scene.boilFactor() });
+    // 캐스팅부터 랜딩까지 1인칭 (원투 받침대 대기는 3인칭)
+    const fs = fishing.state;
+    const fpvState = ['charging', 'flying', 'retrieve', 'fight'].includes(fs) || (fishing.mode !== 'far' && ['waiting', 'bite'].includes(fs));
+    if (fpvState !== !!scene.fpv) { scene.fpv = fpvState; if (!fpvState) { scene.fightInfo = null; scene.shake = 0; } }
+    scene.vmPose = { state: fs, power: fishing.power, k: fishing.k, jerk: fs === 'retrieve' ? fishing.jerk || 0 : 0, pressed: fishing.pressed };
 
     const x = st.onBoat ? BOAT_DOCK : av.x;
     audio.update({
@@ -867,8 +888,18 @@ function npcLife(dt) {
 
 // 히트 → 1인칭(휘어진 낚싯대 · 릴 감는 손) + 진동 + 드랙
 let vibT = 0;
+// ── 음성 멘트 ──
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+function shout(text, opt = {}) {
+  try { if (opt.cut && 'speechSynthesis' in window) speechSynthesis.cancel(); } catch (_) { /* 무시 */ }
+  scene.sayPlayer(text);
+  speak(text, opt);
+}
+let fightVoice = { big: false, plead: false };
 function onHit() {
   scene.fpv = true;
+  fightVoice = { big: false, plead: false, t0: performance.now() };
+  shout(pick(['히트!', '왔다!', '나이스!']), { cut: true, pitch: 1.3, rate: 1.2 });
   vibrate([220, 60, 220]);
   let fl = $('.hit-flash');
   if (!fl) { fl = el('div', { class: 'hit-flash' }); document.body.append(fl); }
@@ -880,7 +911,16 @@ function onHit() {
     if (Math.hypot(g.x - st.avatar.X, g.z - st.avatar.Z) < 30) setTimeout(() => { scene.sayNpc(i, '나이스~!'); speak('나이스~!', { pitch: 0.9 }); }, 600 + i * 300);
   });
 }
-function onFight({ running, pressed, tension }) {
+function onFight({ running, pressed, tension, progress, fish }) {
+  // 1.5초쯤 지나 묵직하면 "크다 커!", 마지막 랜딩 직전엔 간절하게
+  if (!fightVoice.big && performance.now() - fightVoice.t0 > 1500) {
+    fightVoice.big = true;
+    shout(fish && fish.size >= 35 ? '크다 커!' : pick(['크다 커!', '묵직하다!']), { pitch: 1.2, rate: 1.15 });
+  }
+  if (!fightVoice.plead && progress > 0.82) {
+    fightVoice.plead = true;
+    shout(pick(['빠지면 안 돼!', '털리면 안 돼!', '제발… 빠지면 안 돼…', '조금만, 털리면 안 돼!']), { cut: true, pitch: 1.45, rate: 0.85 });
+  }
   scene.shake = running ? 1 : pressed ? 0.45 : 0.12;
   scene.fightInfo = { running, pressed, tension };
   const now = performance.now();
