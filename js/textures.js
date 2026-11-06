@@ -206,3 +206,24 @@ export function cloudTexture(seed) {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+
+export function woodTexture() {
+  const [c, g] = canvas(256, 256);
+  const r = rng(13);
+  for (let y = 0; y < 256; y += 32) {
+    const v = 150 + r() * 40;
+    g.fillStyle = `rgb(${v},${v * 0.78},${v * 0.55})`;
+    g.fillRect(0, y, 256, 30);
+    g.fillStyle = 'rgba(40,25,15,0.6)';
+    g.fillRect(0, y + 30, 256, 2);
+    for (let k = 0; k < 18; k++) {
+      g.strokeStyle = `rgba(70,45,25,${0.1 + r() * 0.2})`;
+      g.beginPath();
+      const yy = y + r() * 30;
+      g.moveTo(0, yy);
+      g.bezierCurveTo(80, yy + (r() - 0.5) * 6, 170, yy + (r() - 0.5) * 6, 256, yy);
+      g.stroke();
+    }
+  }
+  return tex(c, 1);
+}

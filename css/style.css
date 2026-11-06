@@ -131,7 +131,11 @@ button { cursor: pointer; }
 }
 .toast.show { opacity: 1; }
 
-.walk-pad { position: absolute; left: 12px; bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.view-pad { position: absolute; left: 12px; bottom: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100vw - 420px); }
+.view-pad button { border: 0; border-radius: 999px; background: var(--glass); color: #fff; padding: 9px 13px; font-weight: 700; backdrop-filter: blur(6px); }
+.view-pad button[data-v="in"], .view-pad button[data-v="out"] { width: 42px; height: 42px; padding: 0; font-size: 1.2rem; }
+#world { cursor: grab; }
+.hud > .walk-hint { position: absolute; left: 50%; transform: translateX(-50%); top: 120px; margin: 0; pointer-events: none; white-space: nowrap; }
 .walk-pad button {
   width: 58px; height: 58px; border-radius: 50%; border: 0; background: var(--glass); color: #fff; font-size: 1.3rem;
   backdrop-filter: blur(6px); user-select: none; -webkit-user-select: none; touch-action: none;
@@ -258,8 +262,9 @@ button { cursor: pointer; }
   .hud-actions { max-width: 52vw; gap: 4px; }
   .hud-actions button { padding: 7px 10px !important; font-size: 0.78rem; }
   .minimap { top: auto; bottom: 92px; left: 12px; right: 12px; width: auto; height: 28px; }
-  .walk-pad { bottom: 12px; }
-  .walk-hint { display: none; }
+  .view-pad { bottom: 12px; max-width: calc(100vw - 24px); }
+  .view-pad button { padding: 7px 10px; font-size: 0.78rem; }
+  .hud > .walk-hint { top: auto; bottom: 64px; white-space: normal; width: 90vw; text-align: center; font-size: 0.72rem; }
   .fish-panel { bottom: 128px; padding: 10px; }
   .fish-panel .fish-msg { min-height: 0; }
   .toast { bottom: 50%; }

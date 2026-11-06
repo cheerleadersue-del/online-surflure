@@ -27,17 +27,22 @@ export const LINES = {
 // 월드 구역(가로 좌표, px)
 export const ZONES = [
   { id: 'pine', name: '소나무 숲길', from: 0, to: 1900, ground: 'forest', fish: false,
-    tip: '솔향 가득한 숲길. 파도 소리가 조금씩 가까워져요.' },
+    tip: '솔향 가득한 숲. 소나무 사이 어디로든 걸어갈 수 있어요.' },
   { id: 'sandpath', name: '모랫길', from: 1900, to: 2900, ground: 'sand', fish: false,
     tip: '발밑의 모래가 사각사각. 수평선이 보이기 시작합니다.' },
   { id: 'beach', name: '모래 해변', from: 2900, to: 5300, ground: 'sand', fish: true,
     tip: '인증 깃발이 꽂힌 서프 포인트. 깃발을 눌러 조과를 확인하세요.' },
-  { id: 'rocks', name: '갯바위', from: 5300, to: 6500, ground: 'rock', fish: true,
-    tip: '포말이 부서지는 갯바위. 미끄럼 주의!' },
-  { id: 'breakwater', name: '방파제', from: 6500, to: 7800, ground: 'concrete', fish: true,
+  { id: 'pebble', name: '몽돌 해변', from: 5300, to: 6500, ground: 'pebble', fish: true,
+    tip: '파도에 몽돌이 자르르 구르는 작은 만. 원투 포인트예요.' },
+  { id: 'deck', name: '해안 데크길', from: 6500, to: 7700, ground: 'wood', fish: true,
+    tip: '절벽을 따라 걷는 나무 데크. 촛대바위와 파도가 발아래에.' },
+  { id: 'rocks', name: '갯바위', from: 7700, to: 9100, ground: 'rock', fish: true,
+    tip: '포말이 부서지는 갯바위. 바위 위로 올라가 볼 수 있어요. 미끄럼 주의!' },
+  { id: 'breakwater', name: '방파제', from: 9100, to: 10600, ground: 'concrete', fish: true,
     tip: '테트라포드 너머 빨간 등대. 배낚시 선착장이 있어요.' },
 ];
-export const WORLD_END = 7800;
+export const WORLD_END = 10600;
+export const BOAT_DOCK = 10100;
 
 export const METHODS = {
   lure: { id: 'lure', name: '서프루어', icon: '🎣', desc: '던지고 감으며 입질을 유도' },

@@ -98,11 +98,14 @@
     <div class="zone-banner" id="zone-banner"><strong></strong><span></span></div>
     <div class="toast" id="toast"></div>
 
-    <div class="walk-pad" id="walk-pad">
-      <button data-dir="-1" type="button" aria-label="왼쪽으로 걷기">◀</button>
-      <span class="walk-hint" id="walk-hint">← → 키 또는 버튼으로 걸어요</span>
-      <button data-dir="1" type="button" aria-label="오른쪽으로 걷기">▶</button>
+    <div class="view-pad" id="view-pad" aria-label="시점">
+      <button data-v="in" type="button" aria-label="가까이">＋</button>
+      <button data-v="out" type="button" aria-label="멀리">－</button>
+      <button data-v="near" type="button">👀 가까이</button>
+      <button data-v="normal" type="button">🧍 기본</button>
+      <button data-v="sky" type="button">🕊️ 하늘</button>
     </div>
+    <p class="walk-hint" id="walk-hint">가고 싶은 곳을 터치하면 걸어가요 · 드래그로 둘러보기 · 두 손가락/휠로 확대</p>
 
     <div class="fish-panel" id="fish-panel" hidden>
       <div class="method-tabs" id="method-tabs">

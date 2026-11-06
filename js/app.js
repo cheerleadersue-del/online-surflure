@@ -1,5 +1,5 @@
 import {
-  LINES, ZONES, WORLD_END, METHODS, AVATAR_OPTIONS, NAME_IDEAS, DEFAULT_AVATAR,
+  LINES, ZONES, WORLD_END, BOAT_DOCK, METHODS, AVATAR_OPTIONS, NAME_IDEAS, DEFAULT_AVATAR,
   SPECIES_SUGGEST, BAIT_SUGGEST, TIDE, WEATHER, timeSlot, estWaterTemp, zoneAt,
 } from './data.js';
 import { smooth, hashStr } from './scene.js';
@@ -60,9 +60,10 @@ const fishing = new Fishing(audio, {
 st.fishing = fishing;
 
 st.npcs = [
+  { x: 5800, seed: 3, name: '몽돌꾼', look: { ...DEFAULT_AVATAR, jacket: '#2aa198', hat: 'none', pants: 'shorts', pantsColor: '#3a4a63', vest: false } },
   { x: 3820, seed: 1, name: '현지꾼', look: { ...DEFAULT_AVATAR, jacket: '#1f3b73', hat: 'bucket', hatColor: '#5f6b3a', vest: false } },
-  { x: 5620, seed: 4, name: '갯바위꾼', look: { ...DEFAULT_AVATAR, jacket: '#c8262d', hat: 'cap', hatColor: '#222428', pants: 'wader' } },
-  { x: 7080, seed: 7, name: '방파제꾼', look: { ...DEFAULT_AVATAR, jacket: '#f2c230', hat: 'beanie', hatColor: '#c8262d', pants: 'jogger', vest: true } },
+  { x: 8300, seed: 4, name: '갯바위꾼', look: { ...DEFAULT_AVATAR, jacket: '#c8262d', hat: 'cap', hatColor: '#222428', pants: 'wader' } },
+  { x: 9800, seed: 7, name: '방파제꾼', look: { ...DEFAULT_AVATAR, jacket: '#f2c230', hat: 'beanie', hatColor: '#c8262d', pants: 'jogger', vest: true } },
 ];
 
 // ── 입장 화면 ──
@@ -131,10 +132,10 @@ function enterSea() {
     st.hideAvatar = false;
     st.playing = true;
     st.onBoat = false;
-    st.avatar.x = 140;
-    st.avatar.dir = 1;
-    st.camX = 140;
-    scene.snapCam = true;
+    st.avatar.yaw = Math.PI / 2;
+    teleport(140, 0);
+    scene.viewPreset('normal');
+    scene.orbit.yaw = scene.orbit.tYaw = -0.9;
     zone = null;
     fishing.reset();
     $('#hud-line').textContent = LINES[st.line].name;
@@ -155,6 +156,13 @@ function goHome() {
     st.avatar.x = 3500;
     validateEntry();
   });
+}
+
+// 미니맵·배 타기 등 순간 이동
+function teleport(xpx, zPref) {
+  scene.placeAt(st.avatar, xpx, zPref);
+  st.camX = st.avatar.x;
+  scene.snapCam = true;
 }
 
 function fade(fn, ms = 600) {
@@ -208,51 +216,99 @@ $('#minimap').addEventListener('click', (e) => {
   const x = ((e.clientX - r.left) / r.width) * WORLD_END;
   fade(() => {
     st.onBoat = false;
-    st.avatar.x = Math.max(60, Math.min(WORLD_END - 60, x));
-    st.camX = st.avatar.x;
-    scene.snapCam = true;
     fishing.reset();
+    scene.clearCatch();
+    teleport(Math.max(60, Math.min(WORLD_END - 60, x)));
   }, 350);
 });
 
 // ── 입력 ──
+// 키보드: 방향키/WASD = 카메라 기준 이동, Shift = 달리기, Space = 캐스팅
 addEventListener('keydown', (e) => {
   if (!st.playing || e.target.closest('input, textarea, select, dialog')) return;
-  if (['ArrowLeft', 'ArrowRight', 'a', 'd', 'A', 'D'].includes(e.key)) { keys.add(e.key.toLowerCase()); e.preventDefault(); }
+  const k = e.key.toLowerCase();
+  if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'a', 'd', 'w', 's', 'shift'].includes(k)) { keys.add(k); if (k !== 'shift') e.preventDefault(); }
   if (e.code === 'Space' && !e.repeat && !$('#fish-panel').hidden) { e.preventDefault(); mainPress(); }
 });
 addEventListener('keyup', (e) => {
   keys.delete(e.key.toLowerCase());
   if (e.code === 'Space' && st.playing) mainRelease();
 });
-document.querySelectorAll('#walk-pad button').forEach((b) => {
-  const d = +b.dataset.dir;
-  const on = (e) => { e.preventDefault(); walkDir = d; b.classList.add('held'); try { b.setPointerCapture(e.pointerId); } catch (_) { /* 무시 */ } };
-  const off = () => { if (walkDir === d) walkDir = 0; b.classList.remove('held'); };
-  b.addEventListener('pointerdown', on);
-  b.addEventListener('pointerup', off);
-  b.addEventListener('pointercancel', off);
-  b.addEventListener('lostpointercapture', off);
-});
+addEventListener('blur', () => keys.clear());
 
+// 화면: 탭 = 그곳으로 걷기 / 드래그 = 시점 회전 / 두 손가락·휠 = 확대·축소
 const cv = $('#world');
+const pointers = new Map();
+let dragMoved = 0, pinchDist = 0;
+cv.addEventListener('pointerdown', (e) => {
+  if (!st.playing) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { cv.setPointerCapture(e.pointerId); } catch (_) { /* 무시 */ }
+  dragMoved = 0;
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+  }
+});
 cv.addEventListener('pointermove', (e) => {
   if (!st.playing) return;
-  const id = scene.hitFlag(e.clientX, e.clientY);
-  st.hoverFlag = id;
-  cv.style.cursor = id ? 'pointer' : 'default';
+  const p = pointers.get(e.pointerId);
+  if (!p) {
+    const id = scene.hitFlag(e.clientX, e.clientY);
+    st.hoverFlag = id;
+    cv.style.cursor = id ? 'pointer' : 'grab';
+    return;
+  }
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size === 1) {
+    dragMoved += Math.abs(dx) + Math.abs(dy);
+    if (dragMoved > 8) { scene.orbitBy(dx, dy); cv.style.cursor = 'grabbing'; }
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchDist) scene.zoomBy(pinchDist / d);
+    pinchDist = d;
+    dragMoved = 99;
+  }
 });
-cv.addEventListener('click', (e) => {
+const endPointer = (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  const wasTap = pointers.size === 1 && dragMoved <= 8;
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchDist = 0;
+  if (!wasTap || e.type === 'pointercancel') return;
+  const id = scene.hitFlag(e.clientX, e.clientY);
+  if (id) { audio.ui(); openDetail(id); return; }
+  if (st.onBoat) return toast('배 위에서는 움직일 수 없어요. ⚓ 하선하기를 눌러주세요.');
+  if (fishing.busy && fishing.state !== 'result') return toast('낚시 중이에요. 회수하거나 랜딩 후 이동하세요.');
+  const g = scene.pickGround(e.clientX, e.clientY);
+  if (g) {
+    if (fishing.state === 'result') { fishing.reset(); scene.clearCatch(); }
+    st.avatar.target = g;
+  }
+};
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('wheel', (e) => {
   if (!st.playing) return;
-  const id = scene.hitFlag(e.clientX, e.clientY);
-  if (id) { audio.ui(); openDetail(id); }
-});
+  e.preventDefault();
+  scene.zoomBy(Math.exp(e.deltaY * 0.0012));
+}, { passive: false });
+document.querySelectorAll('#view-pad button').forEach((b) => b.addEventListener('click', () => {
+  audio.ui();
+  const v = b.dataset.v;
+  if (v === 'in') scene.zoomBy(0.7);
+  else if (v === 'out') scene.zoomBy(1.45);
+  else scene.viewPreset(v);
+}));
 
 // ── 낚시 패널 ──
 const mainBtn = $('#fish-main');
 function mainPress() {
   if (mainBtn.disabled) return;
   audio.start();
+  if (fishing.state === 'idle' || fishing.state === 'result') { scene.clearCatch(); st.avatar.target = null; scene.focusSea(); }
   fishing.press();
 }
 function mainRelease() { fishing.release(); }
@@ -273,10 +329,10 @@ $('#boat-btn').addEventListener('click', () => {
   const boarding = !st.onBoat;
   fade(() => {
     st.onBoat = boarding;
-    st.avatar.x = 7360;
-    st.camX = 7360;
-    scene.snapCam = true;
     fishing.reset();
+    scene.clearCatch();
+    teleport(BOAT_DOCK, -1.5);
+    scene.viewPreset('sea');
     showBanner(boarding ? '배 위' : '방파제', boarding ? '선상 찌낚시 포인트로 나왔어요. 찌가 잠기면 챔질!' : '선착장으로 돌아왔어요.');
     $('#hud-zone').textContent = boarding ? '배 위 (선상)' : '방파제';
     updatePanel();
@@ -314,6 +370,11 @@ function renderFishUI(ui) {
 let pendingCatch = null;
 function showCatch(f) {
   pendingCatch = f;
+  const av = st.avatar;
+  scene.showCatch(f, st.onBoat ? scene.boat.position.x : av.X, st.onBoat ? 1.2 : av.Y, st.onBoat ? scene.boat.position.z + 1.5 : av.Z);
+  setTimeout(() => openCatchDialog(f), 2600);
+}
+function openCatchDialog(f) {
   $('#c-title').textContent = `${f.name} ${f.size}cm!`;
   $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${zone ? (st.onBoat ? '배 위' : zone.name) : ''} · ${timeSlot(nowDate())}`;
   $('#dlg-catch').showModal();
@@ -618,48 +679,51 @@ function frame(now) {
   const av = st.avatar;
 
   if (st.playing) {
-    let dir = walkDir;
-    if (keys.has('arrowleft') || keys.has('a')) dir = -1;
-    if (keys.has('arrowright') || keys.has('d')) dir = 1;
+    // 카메라 기준 키보드 방향
+    let kx = 0, kz = 0;
+    if (keys.has('arrowleft') || keys.has('a')) kx -= 1;
+    if (keys.has('arrowright') || keys.has('d')) kx += 1;
+    if (keys.has('arrowup') || keys.has('w')) kz -= 1;
+    if (keys.has('arrowdown') || keys.has('s')) kz += 1;
     const anyDialog = document.querySelector('dialog[open]');
-    if (anyDialog || st.onBoat) dir = 0;
-    if (dir && fishing.busy && fishing.state !== 'result') {
-      dir = 0;
-      if (!toastT || !$('#toast').classList.contains('show')) toast('낚시 중이에요. 회수하거나 랜딩 후 이동하세요.');
-    }
-    if (dir && fishing.state === 'result') fishing.reset();
-    av.walking = !!dir;
-    if (dir) {
-      av.dir = dir;
-      av.x = Math.max(40, Math.min(WORLD_END - 40, av.x + dir * 100 * dt));
-      av.phase += dt * 7.5;
-      const sign = Math.sign(Math.sin(av.phase));
-      if (sign !== lastStepSign) {
-        lastStepSign = sign;
-        const z = zoneAt(av.x);
-        audio.step(z.ground);
-        scene.addFootprint(av.x, dir, sign > 0);
+    let input = null;
+    if ((kx || kz) && !anyDialog && !st.onBoat) {
+      if (fishing.busy && fishing.state !== 'result') {
+        if (!$('#toast').classList.contains('show')) toast('낚시 중이에요. 회수하거나 랜딩 후 이동하세요.');
+      } else {
+        if (fishing.state === 'result') { fishing.reset(); scene.clearCatch(); }
+        const yaw = scene.orbit.yaw;
+        const fx = -Math.sin(yaw), fz = -Math.cos(yaw); // 화면 안쪽
+        const rx = -fz, rz = fx; // 오른쪽
+        const vx = fx * -kz + rx * kx, vz = fz * -kz + rz * kx;
+        const l = Math.hypot(vx, vz) || 1;
+        input = { dx: vx / l, dz: vz / l };
       }
     }
+    if (anyDialog || st.onBoat) av.target = null;
+    av.run = keys.has('shift');
+    if (!st.onBoat) {
+      const stepKind = scene.stepAvatar(av, dt, input);
+      if (stepKind) audio.step(stepKind === 'ground' ? zoneAt(av.x).ground : stepKind);
+    } else av.walking = false;
     const z = zoneAt(av.x);
     if (z !== zone) {
       zone = z;
       showBanner(z.name, z.tip);
       $('#hud-zone').textContent = z.name;
-      if (z.id === 'pine') $('#walk-hint').textContent = '→ 오른쪽으로 걸어 바다로 가요';
-      else if (z.fish) $('#walk-hint').textContent = '오른쪽 아래 패널로 낚시를 해보세요';
+      if (z.fish) $('#walk-hint').textContent = '오른쪽 아래 패널로 낚시를 해보세요';
       updatePanel();
     }
     // 카메라는 부드럽게 따라감
     st.camX += (av.x - st.camX) * Math.min(1, dt * 4);
     fishing.update(dt, { line: st.line, date, onBoat: st.onBoat });
 
-    const x = st.onBoat ? 7600 : av.x;
+    const x = st.onBoat ? BOAT_DOCK : av.x;
     audio.update({
       forest: st.onBoat ? 0 : 1 - smooth(1700, 2700, x),
       sea: st.onBoat ? 0.6 : 0.08 + smooth(1500, 3000, x) * 0.92,
       gull: smooth(2600, 3200, x),
-      rock: st.onBoat ? 0 : smooth(5200, 5400, x) * (1 - smooth(6400, 6600, x)),
+      rock: st.onBoat ? 0 : Math.max(smooth(6400, 6600, x) * (1 - smooth(9000, 9200, x)), smooth(5300, 5600, x) * 0.4),
       boat: st.onBoat ? 1 : 0,
     }, dt);
 
@@ -714,3 +778,5 @@ store.init().then((mode) => {
   }).catch(() => { if (fine) fine.textContent = prev; });
 }
 requestAnimationFrame(frame);
+// 개발 확인용 (?debug)
+if (params.has('debug')) window.__surf = { st, scene, fishing, audio };
