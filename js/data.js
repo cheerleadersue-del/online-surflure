@@ -25,24 +25,76 @@ export const LINES = {
 };
 
 // 월드 구역(가로 좌표, px)
-export const ZONES = [
-  { id: 'pine', name: '소나무 숲길', from: 0, to: 1900, ground: 'forest', fish: false,
-    tip: '솔향 가득한 숲. 소나무 사이 어디로든 걸어갈 수 있어요.' },
-  { id: 'sandpath', name: '모랫길', from: 1900, to: 2900, ground: 'sand', fish: false,
-    tip: '발밑의 모래가 사각사각. 수평선이 보이기 시작합니다.' },
-  { id: 'beach', name: '모래 해변', from: 2900, to: 5300, ground: 'sand', fish: true,
-    tip: '인증 깃발이 꽂힌 서프 포인트. 깃발을 눌러 조과를 확인하세요.' },
-  { id: 'pebble', name: '몽돌 해변', from: 5300, to: 6500, ground: 'pebble', fish: true,
-    tip: '파도에 몽돌이 자르르 구르는 작은 만. 원투 포인트예요.' },
-  { id: 'deck', name: '해안 데크길', from: 6500, to: 7700, ground: 'wood', fish: true,
-    tip: '절벽을 따라 걷는 나무 데크. 촛대바위와 파도가 발아래에.' },
-  { id: 'rocks', name: '갯바위', from: 7700, to: 9100, ground: 'rock', fish: true,
-    tip: '포말이 부서지는 갯바위. 바위 위로 올라가 볼 수 있어요. 미끄럼 주의!' },
-  { id: 'breakwater', name: '방파제', from: 9100, to: 10600, ground: 'concrete', fish: true,
-    tip: '테트라포드 너머 빨간 등대. 배낚시 선착장이 있어요.' },
+// 동해 해안 구간 (게임 좌표 px, 1px = 0.06m) — 소나무 숲길 없이 바다에서 시작
+const EAST_ZONES = [
+  { id: 'beach', name: '모래 해변', from: 2900, to: 5300, ground: 'sand', fish: true, tip: '파도가 밀려오는 서프 포인트예요.' },
+  { id: 'pebble', name: '몽돌 해변', from: 5300, to: 6500, ground: 'pebble', fish: true, tip: '파도에 몽돌이 자르르 구르는 작은 만.' },
+  { id: 'deck', name: '해안 데크길', from: 6500, to: 7700, ground: 'wood', fish: true, tip: '절벽을 따라 걷는 나무 데크. 촛대바위가 발아래에.' },
+  { id: 'rocks', name: '갯바위', from: 7700, to: 9100, ground: 'rock', fish: true, tip: '바위 위로 올라가 볼 수 있어요. 미끄럼 주의!' },
+  { id: 'breakwater', name: '방파제', from: 9100, to: 10600, ground: 'concrete', fish: true, tip: '테트라포드 너머 등대. 배낚시 선착장이 있어요.' },
 ];
+const SIHWA_ZONES = [
+  { id: 'dike', name: '시화방조제', from: 2900, to: 10600, ground: 'concrete', fish: true, tip: '바깥은 서해, 안쪽은 시화호. 끝없이 곧은 방조제.' },
+];
+export let ZONES = EAST_ZONES;
+export function setZonesFor(point) { ZONES = point && point.type === 'dike' ? SIHWA_ZONES : EAST_ZONES; return ZONES; }
+export const WORLD_START = 2900;
 export const WORLD_END = 10600;
 export const BOAT_DOCK = 10100;
+
+// 입장 포인트 (실제 주요 해수욕장·방파제·항구). mark = 그 포인트를 상징하는 배경
+export const POINTS = {
+  east: [
+    { id: 'hwajinpo', type: 'beach', name: '고성 화진포해수욕장', mark: 'villa', desc: '호수와 바다 사이 고운 모래, 언덕 위 돌별장' },
+    { id: 'sokcho-beach', type: 'beach', name: '속초해수욕장', mark: 'wheel', desc: '해변 옆으로 도는 대관람차' },
+    { id: 'naksan', type: 'beach', name: '양양 낙산해수욕장', mark: 'statue', desc: '언덕 위 하얀 해수관음상을 바라보는 해변' },
+    { id: 'gyeongpo', type: 'beach', name: '강릉 경포해수욕장', mark: 'pavilion', desc: '넓은 백사장과 언덕 위 정자' },
+    { id: 'mangsang', type: 'beach', name: '동해 망상해수욕장', mark: 'cabins', desc: '끝없는 백사장, 알록달록 캠핑 오두막' },
+    { id: 'samcheok', type: 'beach', name: '삼척해수욕장', mark: 'resort', desc: '하얀 벽 파란 지붕 리조트가 보이는 해변' },
+    { id: 'dongmyeong', type: 'breakwater', name: '속초 동명항 방파제', mark: 'rockPavilion', desc: '바위 위 정자(영금정)가 있는 방파제' },
+    { id: 'jumunjin-bw', type: 'breakwater', name: '강릉 주문진 방파제', mark: 'twinLights', desc: '빨간 등대와 하얀 등대가 마주 보는 방파제' },
+    { id: 'anmok', type: 'breakwater', name: '강릉 안목항 방파제', mark: 'cafes', desc: '커피거리 카페들이 늘어선 방파제' },
+    { id: 'imwon', type: 'breakwater', name: '삼척 임원항 방파제', mark: 'cliffLight', desc: '절벽 아래 빨간 등대' },
+    { id: 'jumunjin-port', type: 'port', name: '강릉 주문진항', mark: 'market', desc: '어선이 빼곡한 항구와 수산시장' },
+    { id: 'daepo', type: 'port', name: '속초 대포항', mark: 'boats', desc: '등대 탑과 오징어배들' },
+    { id: 'mukho', type: 'port', name: '동해 묵호항', mark: 'village', desc: '언덕 위 알록달록 마을과 하얀 등대' },
+    { id: 'guryongpo', type: 'port', name: '포항 구룡포항', mark: 'racks', desc: '과메기 덕장이 늘어선 항구' },
+    { id: 'hupo', type: 'port', name: '울진 후포항', mark: 'skywalk', desc: '바다 위로 뻗은 스카이워크와 언덕 등대' },
+  ],
+  west: [
+    { id: 'sihwa', type: 'dike', name: '시화방조제', mark: 'moonTower', desc: '바다와 호수 사이 11km 방조제, 달 전망대' },
+  ],
+};
+export const POINT_TYPE_NAME = { beach: '해수욕장', breakwater: '방파제', port: '항구', dike: '방조제' };
+export const findPoint = (id) => [...POINTS.east, ...POINTS.west].find((p) => p.id === id) || null;
+
+// 장비: 효과는 캐스팅 거리(cast) · 줄 강도(strong) · 감는 속도(speed) · 입질(bite) · 어종 선호(prefer)
+export const GEAR = {
+  rod: [
+    { id: 'bamboo', name: '대나무', tag: '기본형', cast: 0.72, strong: 0.85 },
+    { id: 'standard', name: '보급형', tag: '카본 서프로드', cast: 0.88, strong: 1.0 },
+    { id: 'premium', name: '고급형', tag: '고탄성 서프로드', cast: 1.0, strong: 1.15 },
+  ],
+  reel: [
+    { id: 'basic', name: '기본형', tag: '스피닝릴', speed: 1.0, smooth: 1.0 },
+    { id: 'ultegra', name: '울테그라', tag: '원투·서프', speed: 1.12, smooth: 0.9 },
+    { id: 'stella', name: '스텔라', tag: '최고급 스피닝', speed: 1.28, smooth: 0.72 },
+    { id: 'vanquish', name: '뱅퀴쉬', tag: '초경량 스피닝', speed: 1.3, smooth: 0.78 },
+  ],
+  bait: [
+    { id: 'basic', name: '기본형', tag: '갯지렁이', bite: 1.0, prefer: [] },
+    { id: 'worm', name: '웜', tag: '바닥 공략', bite: 1.1, prefer: ['광어', '양태', '우럭', '노래미'] },
+    { id: 'metal', name: '메탈', tag: '원거리·회유어', bite: 1.05, prefer: ['삼치', '방어(새끼)', '방어'] },
+    { id: 'minnow', name: '미노우', tag: '표층·중층', bite: 1.1, prefer: ['농어', '황어', '숭어'] },
+  ],
+  outfit: [
+    { id: 'basic', name: '기본형', tag: '반바지·슬리퍼', wade: -0.25 },
+    { id: 'boots', name: '무릎 장화', tag: '긴바지·장화', wade: -0.45 },
+    { id: 'wader', name: '웨이더', tag: '가슴 장화', wade: -1.05 },
+  ],
+};
+export const gearOf = (kind, id) => GEAR[kind].find((g) => g.id === id) || GEAR[kind][0];
+export const DEFAULT_GEAR = { rod: 'bamboo', reel: 'basic', bait: 'basic', outfit: 'basic' };
 
 export const METHODS = {
   lure: { id: 'lure', name: '서프루어', icon: '🎣', desc: '던지고 감으며 입질을 유도' },
@@ -91,6 +143,7 @@ export function estWaterTemp(line, date = new Date()) {
 }
 
 export function zoneAt(x) {
+  if (x < ZONES[0].from) return ZONES[0];
   return ZONES.find((z) => x >= z.from && x < z.to) || ZONES[ZONES.length - 1];
 }
 

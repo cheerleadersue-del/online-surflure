@@ -141,7 +141,9 @@ export class SoundScape {
     // 드랙: 물고기가 줄을 차고 나갈 때 '지이이익' 래칫 소리
     if (this._dragOn && t >= this._nextDrag) {
       const rate = 26 + this._dragK * 30;
-      this._burst(this.white, 'bandpass', 2600 + Math.random() * 900, 7, 0.07 + this._dragK * 0.05, 0.001, 0.014);
+      const loud = this._fight ? 3 : 1;
+      this._burst(this.white, 'bandpass', 2600 + Math.random() * 900, 7, (0.07 + this._dragK * 0.05) * loud, 0.001, 0.014);
+      if (this._fight) this._burst(this.brown, 'lowpass', 600, 1, 0.12 * this._dragK, 0.001, 0.02);
       this._nextDrag = t + 1 / rate;
     }
     if (this._reelOn && t >= this._nextTick) {
@@ -293,11 +295,37 @@ export class SoundScape {
     hiss.frequency.linearRampToValueAtTime(1800, this.ctx.currentTime + 1.2);
   }
 
+  // 파이트 중: 파도를 1/3로 낮추고 드랙·진동음을 크게
+  fight(on) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, g = this.seaBus.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(on ? 0.33 : 1, t + (on ? 0.15 : 1.2));
+    if (!this.buzz) {
+      // 진동음: 낮은 '웅웅' 소리 (휴대폰 진동처럼)
+      const o = this.ctx.createOscillator();
+      o.type = 'square'; o.frequency.value = 52;
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 220;
+      const gg = this.ctx.createGain(); gg.gain.value = 0;
+      o.connect(lp).connect(gg).connect(this.master);
+      o.start();
+      this.buzz = gg;
+    }
+    if (!on) { this.buzz.gain.setTargetAtTime(0, t, 0.05); this._fight = false; }
+    else this._fight = true;
+  }
+
   drag(on, k = 0.5) {
     if (!this.ctx) return;
-    if (on && !this._dragOn) { this._nextDrag = this.ctx.currentTime; this.duck(0.45, 0.8); }
+    if (on && !this._dragOn) this._nextDrag = this.ctx.currentTime;
     this._dragOn = on;
     this._dragK = k;
+    if (this.buzz && this._fight) {
+      const t = this.ctx.currentTime;
+      this.buzz.gain.setTargetAtTime(on ? 0.16 + k * 0.2 : 0.02, t, 0.03);
+    }
   }
 
   plop(far = 0.5) {

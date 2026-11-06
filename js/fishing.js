@@ -28,6 +28,7 @@ export class Fishing {
     this.splashes = [];
     this.audio.reel(false);
     if (this.audio.drag) this.audio.drag(false);
+    if (this.audio._fight && this.audio.fight) this.audio.fight(false);
     if (notify) this.emit();
   }
 
@@ -79,8 +80,9 @@ export class Fishing {
       this.state = 'flying';
       this.k = 0;
       const p = this.power;
-      if (this.mode === 'lure') this.target = 0.3 + p * 0.68;
-      else if (this.mode === 'far') this.target = 0.45 + p * 0.53;
+      const cast = this.gear ? this.gear.rod.cast : 1;
+      if (this.mode === 'lure') this.target = (0.3 + p * 0.68) * cast;
+      else if (this.mode === 'far') this.target = (0.45 + p * 0.53) * cast;
       else this.target = 0.12 + p * 0.3;
       this.audio.cast();
     }
@@ -98,7 +100,12 @@ export class Fishing {
 
   pickFish(line) {
     const list = FISH[this.mode][line];
-    const [name, min, max] = list[Math.floor(Math.random() * list.length)];
+    // 미끼에 맞는 어종이 더 잘 문다
+    const prefer = (this.gear && this.gear.bait.prefer) || [];
+    const w = list.map(([n]) => (prefer.includes(n) ? 3 : 1));
+    let k = Math.random() * w.reduce((a, b) => a + b, 0), idx = 0;
+    while (k > w[idx]) { k -= w[idx]; idx++; }
+    const [name, min, max] = list[Math.min(idx, list.length - 1)];
     const r = Math.pow(Math.random(), 1.6);
     const size = Math.round(min + (max - min) * r);
     return { name, size, str: 0.35 + r * 0.65, max };
@@ -112,10 +119,13 @@ export class Fishing {
     this.run = 0;
     this.nextRun = 0.6 + Math.random() * 0.8;
     // 감고 있으면 5~7초 안에 랜딩
-    this.fightT = 5 + Math.random() * 2;
+    // 좋은 릴일수록 5초 쪽에 가깝게 (5~7초)
+    const sp = this.gear ? this.gear.reel.speed : 1;
+    this.fightT = 5 + Math.random() * 2 * Math.max(0.2, (1.32 - sp) / 0.32);
     this.progress = 0;
     this.d0 = Math.max(0.15, this.d);
     this.msg = '히트!! 릴을 누르고 감으세요! 텐션이 빨개지면 잠깐 놓아주세요';
+    this.audio.fight && this.audio.fight(true);
     this.hooks.onHit && this.hooks.onHit(this.fish);
   }
 
@@ -124,6 +134,7 @@ export class Fishing {
     this.hooks.onFightEnd && this.hooks.onFightEnd(ok);
     this.audio.reel(false);
     this.audio.drag(false);
+    this.audio.fight && this.audio.fight(false);
     this.msg = msg;
     if (ok) {
       this.audio.success();
@@ -136,7 +147,7 @@ export class Fishing {
   update(dt, env) {
     this.env = env;
     const s = this.state;
-    const bonus = SLOT_BONUS[timeSlot(env.date)] || 1;
+    const bonus = (SLOT_BONUS[timeSlot(env.date)] || 1) * (this.gear ? this.gear.bait.bite : 1);
     this.splashes = this.splashes.filter((p) => (p.life -= dt) > 0);
 
     if (s === 'charging') {
@@ -210,7 +221,9 @@ export class Fishing {
       this.audio.drag(this.pressed || running, running ? 0.6 + f.str * 0.4 : 0.25);
       if (this.pressed) {
         this.progress += (dt / this.fightT) * (running ? 0.55 : 1.18);
-        this.tension += dt * (running ? 0.32 + f.str * 0.25 : -0.05);
+        const g = this.gear;
+        const soft = g ? g.reel.smooth / g.rod.strong : 1;
+        this.tension += dt * (running ? (0.32 + f.str * 0.25) * soft : -0.05);
         this.slack = 0;
       } else {
         this.tension -= dt * 0.6;
