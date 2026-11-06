@@ -1,6 +1,7 @@
 // 3D 바다 월드: 소나무 숲길 → 모랫길 → 해변 → 갯바위 → 방파제 (Three.js)
 import * as THREE from '../vendor/three/three.module.min.js';
 import { Avatar } from './avatar3d.js';
+import { loadHDR } from './assets.js';
 import * as TX from './textures.js';
 import { rng, smooth, lerp, clamp, skyAt, hashStr } from './scene.js';
 
@@ -141,6 +142,13 @@ export class World {
     this.flagGroups.clear();
     this.flagsRef = null;
     this.lastHour = -1;
+    this.skyMode = '';
+  }
+
+  setAssets(a) {
+    this.assets = a;
+    Avatar.assets = a;
+    if (this.scene) this.build(this.line);
   }
 
   dispose() {
@@ -165,6 +173,9 @@ export class World {
     const pos = new Float32Array(nx * nz * 3);
     const col = new Float32Array(nx * nz * 3);
     const uv = new Float32Array(nx * nz * 2);
+    const splat = new Float32Array(nx * nz * 4);
+    const A = this.assets;
+    const west = this.line === 'west';
     const c = new THREE.Color();
     const forestC = C('#4c3f29'), mossC = C('#434a2b'), needleC = C('#6a5233'), pathC = C('#9a8462');
     const hillC = C('#2f4428'), hillC2 = C('#45592f'), cliffC = C('#8a7864'), grassC = C('#6c7240');
@@ -206,6 +217,30 @@ export class World {
           gc.lerp(cliffC, clamp(steep));
           c.lerp(gc, smooth(2, 6, hh));
         }
+        if (A) {
+          // 실사 질감 섞기 비율: x=젖은 모래, y=자갈, z=숲 바닥/풀, w=바위
+          const land = dz > 0 ? 1 : 0;
+          const pathK = 1 - smooth(1.2, 2.6, Math.abs(Z + Math.sin(X * 0.05) * 0.4));
+          const beach = 1 - f;
+          let wet = (dz < 0 ? 1 : 1 - smooth(1.2, 5, dz)) * beach;
+          let peb = west ? beach * smooth(-14, -6, dz) * (1 - smooth(22, 30, dz)) : 0;
+          let fo = Math.max(f * land * (1 - pathK * 0.95), smooth(24, 34, dz) * beach);
+          let rk = 0;
+          if (rocky > 0 && dz > -6 && dz < 9) rk = rocky * smooth(0.25, 0.5, n + 0.2);
+          const hh2 = hillH(X, Z);
+          if (hh2 > 2) {
+            const steep = Z < 75 ? smooth(4, 14, hh2) * (1 - smooth(18, 30, hh2)) * smooth(40, 70, 75 - Z + 40) : 0;
+            fo = Math.max(fo, smooth(2, 6, hh2) * (1 - steep));
+            rk = Math.max(rk, smooth(2, 6, hh2) * steep);
+          }
+          splat[i * 4] = wet; splat[i * 4 + 1] = peb; splat[i * 4 + 2] = fo; splat[i * 4 + 3] = rk;
+          // 색 보정(틴트)
+          c.setRGB(1, 1, 1).multiplyScalar(0.9 + n * 0.2);
+          if (west) c.multiply(new THREE.Color(1.0, 0.86, 0.76));
+          if (f > 0.3 && hh2 < 2) c.lerp(new THREE.Color(0.66, 0.5, 0.36), f * (1 - pathK * 0.7));
+          if (hh2 > 2 || (dz > 24 && f < 1)) c.lerp(new THREE.Color(0.62, 0.8, 0.5), Math.max(smooth(2, 6, hh2), smooth(24, 34, dz) * (1 - f)) * 0.8);
+          if (dz < 0) c.multiplyScalar(lerp(0.85, 0.45, smooth(0, 12, -dz)));
+        }
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
       }
     }
@@ -220,10 +255,10 @@ export class World {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('splat', new THREE.BufferAttribute(splat, 4));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    const detail = TX.groundDetail(S.detail, 3);
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, map: detail, roughness: 1, metalness: 0 });
+    const m = A ? this.terrainMaterial() : new THREE.MeshStandardMaterial({ vertexColors: true, map: TX.groundDetail(S.detail, 3), roughness: 1, metalness: 0 });
     const mesh = new THREE.Mesh(geo, m);
     mesh.receiveShadow = true;
     this.scene.add(mesh);
@@ -246,6 +281,47 @@ export class World {
     t.needsUpdate = true;
   }
 
+  // 여러 장의 스캔 질감을 정점 비율로 섞는 지면 재질
+  terrainMaterial() {
+    const T = this.assets.tex;
+    const west = this.line === 'west';
+    const m = new THREE.MeshStandardMaterial({
+      vertexColors: true, map: (west ? T.path : T.sand).map, normalMap: T.sand.normal, roughness: 1, metalness: 0,
+    });
+    m.normalScale.set(0.9, 0.9);
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, {
+        tWet: { value: T.wet.map }, tPeb: { value: T.pebble.map }, tFor: { value: T.forest.map }, tRock: { value: T.rock.map },
+        tPebN: { value: T.pebble.normal }, tRockN: { value: T.rock.normal }, uWest: { value: west ? 1 : 0 },
+      });
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec4 splat;\nvarying vec4 vSplat;\nvarying vec2 vWxz;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSplat = splat;\nvWxz = position.xz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          uniform sampler2D tWet, tPeb, tFor, tRock, tPebN, tRockN;
+          uniform float uWest;
+          varying vec4 vSplat;
+          varying vec2 vWxz;
+          vec4 tile(sampler2D t, vec2 p, float s) {
+            vec2 a = p / s;
+            vec2 b = mat2(0.8, -0.6, 0.6, 0.8) * p / (s * 3.7);
+            return mix(texture2D(t, a), texture2D(t, b), 0.35);
+          }`)
+        .replace('#include <map_fragment>', `
+          vec4 cBase = tile(map, vWxz, 3.5);
+          vec4 cc = cBase;
+          cc = mix(cc, tile(tPeb, vWxz, 1.6), vSplat.y);
+          cc = mix(cc, tile(tFor, vWxz, 3.0), vSplat.z);
+          cc = mix(cc, tile(tRock, vWxz, 4.0), vSplat.w);
+          vec4 wetC = tile(tWet, vWxz, 4.0);
+          cc = mix(cc, mix(wetC, cc * 0.62, uWest), vSplat.x * (1.0 - vSplat.w));
+          diffuseColor *= cc;`)
+        .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * mix(1.0, 0.42, vSplat.x * (1.0 - vSplat.w));');
+    };
+    return m;
+  }
+
   // 바위·테트라포드 주변에도 포말이 생기도록 깊이 지도에 찍는다
   stampDepth(X, Z, rad, depth = 0) {
     const W = this.depthW;
@@ -266,9 +342,19 @@ export class World {
 
   buildWater() {
     const S = this.style;
-    const geo = new THREE.PlaneGeometry(5000, 5000, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    geo.translate(300, 0, -2400);
+    // 가까운 바다: 촘촘한 격자(실제로 출렁임) / 먼 바다: 구멍 뚫린 큰 판
+    const NX0 = -500, NX1 = 1100, NZ0 = -1100, NZ1 = 60;
+    const near = new THREE.PlaneGeometry(NX1 - NX0, NZ1 - NZ0, this.mobile ? 200 : 320, this.mobile ? 150 : 240);
+    near.rotateX(-Math.PI / 2);
+    near.translate((NX0 + NX1) / 2, 0, (NZ0 + NZ1) / 2);
+    const shape = new THREE.Shape();
+    shape.moveTo(-6000, -3000); shape.lineTo(6000, -3000); shape.lineTo(6000, 9000); shape.lineTo(-6000, 9000); shape.closePath();
+    const hole = new THREE.Path();
+    hole.moveTo(NX0, -NZ1); hole.lineTo(NX1, -NZ1); hole.lineTo(NX1, -NZ0); hole.lineTo(NX0, -NZ0); hole.closePath();
+    shape.holes.push(hole);
+    const far = new THREE.ShapeGeometry(shape);
+    far.rotateX(-Math.PI / 2);
+    const sky = this.assets && this.assets.hdr.day;
     const u = (this.waterU = {
       uTime: { value: 0 },
       uDepth: { value: this.depthTex },
@@ -282,54 +368,94 @@ export class World {
       uFogCol: { value: new THREE.Color('#cfe3f0') },
       uFogDen: { value: S.fog },
       uLight: { value: 1 },
-      uChop: { value: this.line === 'west' ? 0.6 : 1 },
+      uChop: { value: this.line === 'west' ? 0.65 : 1 },
+      uSky: { value: sky || null },
+      uHasSky: { value: sky ? 1 : 0 },
+      uSkyRot: { value: new THREE.Matrix3() },
+      uSkyGain: { value: 1 },
     });
     const m = new THREE.ShaderMaterial({
       uniforms: u,
       transparent: true,
       depthWrite: false,
       vertexShader: `
+        uniform float uTime, uChop;
+        uniform sampler2D uDepth;
+        uniform vec4 uBounds;
         varying vec3 vW;
+        varying vec3 vN;
+        varying float vCrest;
+        // 게르스트너 파도 (방향, 파장, 높이, 속도)
+        vec3 gerstner(vec2 p, vec2 d, float L, float A, float sp, inout vec3 T, inout vec3 B, inout float crest) {
+          float k = 6.28318 / L;
+          float f = k * (dot(d, p) - sp * uTime);
+          float Q = 0.55;
+          float c = cos(f), s = sin(f);
+          T += vec3(-Q * d.x * d.x * A * k * s, d.x * A * k * c, -Q * d.x * d.y * A * k * s);
+          B += vec3(-Q * d.x * d.y * A * k * s, d.y * A * k * c, -Q * d.y * d.y * A * k * s);
+          crest += max(s, 0.0) * A;
+          return vec3(Q * A * d.x * c, A * s, Q * A * d.y * c);
+        }
         void main() {
           vec4 w = modelMatrix * vec4(position, 1.0);
+          vec2 uv = (w.xz - uBounds.xy) / uBounds.zw;
+          float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+          float depth = mix(12.0, texture2D(uDepth, clamp(uv, 0.0, 1.0)).r * 12.0, inside);
+          float dist = length(w.xyz - cameraPosition);
+          // 얕은 곳·먼 곳은 파도를 줄인다
+          float amp = uChop * smoothstep(0.05, 2.5, depth) * (1.0 - smoothstep(250.0, 700.0, dist));
+          vec3 T = vec3(1.0, 0.0, 0.0), B = vec3(0.0, 0.0, 1.0);
+          float crest = 0.0;
+          vec3 off = vec3(0.0);
+          off += gerstner(w.xz, normalize(vec2(0.10, 1.0)), 24.0, 0.32 * amp, 3.2, T, B, crest);
+          off += gerstner(w.xz, normalize(vec2(-0.35, 1.0)), 13.0, 0.16 * amp, 2.4, T, B, crest);
+          off += gerstner(w.xz, normalize(vec2(0.55, 0.8)), 7.5, 0.08 * amp, 1.8, T, B, crest);
+          off += gerstner(w.xz, normalize(vec2(-0.8, 0.45)), 4.2, 0.04 * amp, 1.4, T, B, crest);
+          w.xyz += off;
           vW = w.xyz;
+          vN = normalize(cross(B, T));
+          vCrest = crest / max(0.001, 0.6 * amp + 0.0001) * step(0.001, amp);
           gl_Position = projectionMatrix * viewMatrix * w;
         }`,
       fragmentShader: `
-        uniform float uTime, uFogDen, uLight, uChop;
-        uniform sampler2D uDepth;
+        uniform float uTime, uFogDen, uLight, uChop, uHasSky, uSkyGain;
+        uniform sampler2D uDepth, uSky;
+        uniform mat3 uSkyRot;
         uniform vec4 uBounds;
         uniform vec3 uSunDir, uSunCol, uSkyTop, uSkyHor, uShallow, uDeep, uFogCol;
         varying vec3 vW;
+        varying vec3 vN;
+        varying float vCrest;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
           vec2 u = f * f * (3.0 - 2.0 * f);
           return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
         }
-        vec2 wave(vec2 p, vec2 d, float f, float a, float s) {
-          return d * (a * f * cos(dot(d, p) * f + uTime * s));
+        vec2 eqUv(vec3 d) {
+          return vec2(atan(d.z, d.x) * 0.15915494 + 0.5, asin(clamp(d.y, -1.0, 1.0)) * 0.31830988 + 0.5);
         }
         void main() {
           float dist = length(vW - cameraPosition);
           vec2 p = vW.xz;
+          // 잔물결(세밀한 법선)
+          float e = 0.3;
           vec2 g = vec2(0.0);
-          g += wave(p, normalize(vec2(0.12, 1.0)), 0.21, 0.16, 1.2);
-          g += wave(p, normalize(vec2(-0.3, 1.0)), 0.37, 0.07, 1.7);
-          g += wave(p, normalize(vec2(0.6, 0.8)), 0.73, 0.035, 2.3);
-          g += wave(p, normalize(vec2(-0.8, 0.5)), 1.31, 0.018, 3.1);
-          float e = 0.35;
-          vec2 q = p * 1.6 + vec2(uTime * 0.35, uTime * 0.22);
-          float n0 = noise(q), nx = noise(q + vec2(e, 0.0)), nz = noise(q + vec2(0.0, e));
-          g += vec2(nx - n0, nz - n0) * 0.55;
-          g *= uChop / (1.0 + dist * 0.012);
-          vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
+          for (int i = 0; i < 3; i++) {
+            float sc = 1.3 + float(i) * 1.9;
+            vec2 q = p * sc + vec2(uTime * (0.35 + float(i) * 0.12), uTime * (0.22 - float(i) * 0.05));
+            float n0 = noise(q), nx = noise(q + vec2(e, 0.0)), nz = noise(q + vec2(0.0, e));
+            g += vec2(nx - n0, nz - n0) * (0.5 / (1.0 + float(i)));
+          }
+          g *= 0.6 * uChop / (1.0 + dist * 0.015);
+          vec3 n = normalize(vN + vec3(-g.x, 0.0, -g.y));
+          // 멀리서는 잔물결을 지워 반짝이는 노이즈를 없앤다
+          n = normalize(mix(n, vec3(0.0, 1.0, 0.0), smoothstep(40.0, 260.0, dist) * 0.85));
 
           vec2 uv = (p - uBounds.xy) / uBounds.zw;
           float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
           float depth = mix(12.0, texture2D(uDepth, clamp(uv, 0.0, 1.0)).r * 12.0, inside);
 
-          // 포말: 물가에서 밀려왔다 빠지는 물 + 부서지며 다가오는 파도
           float swash = 0.03 + 0.12 * (0.5 + 0.5 * sin(uTime * 0.9));
           float edge = 1.0 - smoothstep(swash, swash + 0.1, depth);
           float fn = noise(p * 1.4 + uTime * 0.5) * 0.6 + noise(p * 4.0 - uTime * 0.3) * 0.4;
@@ -341,16 +467,25 @@ export class World {
             float band = 1.0 - smoothstep(0.0, w, abs(depth - front));
             foam = max(foam, band * sin(ph * 3.14159) * smoothstep(0.35, 0.7, noise(p * vec2(0.7, 2.2) + float(i) * 7.0 + uTime * 0.1)) * 0.9);
           }
-          foam *= 1.0 - smoothstep(60.0, 220.0, dist);
+          // 파도 마루의 흰 물결
+          foam = max(foam, smoothstep(0.75, 1.0, vCrest) * smoothstep(0.55, 0.85, fn) * 0.5 * (1.0 - smoothstep(80.0, 300.0, dist)));
+          foam *= 1.0 - smoothstep(60.0, 260.0, dist);
 
           vec3 V = normalize(cameraPosition - vW);
-          vec3 R = reflect(-V, n);
+          vec3 Rr = reflect(-V, n);
+          Rr.y = abs(Rr.y);
           float fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, V), 0.0), 5.0);
-          vec3 sky = mix(uSkyHor, uSkyTop, clamp(R.y * 1.8, 0.0, 1.0));
+          vec3 sky = mix(uSkyHor, uSkyTop, clamp(Rr.y * 1.8, 0.0, 1.0));
+          if (uHasSky > 0.5) {
+            vec3 sk = texture2D(uSky, eqUv(uSkyRot * Rr)).rgb * uSkyGain;
+            sky = mix(min(sk, vec3(3.0)), uFogCol, smoothstep(60.0, 600.0, dist) * 0.6);
+          }
           float sh = 1.0 - smoothstep(0.0, 6.0, depth);
           vec3 base = mix(uDeep, uShallow, sh) * (0.25 + 0.75 * uLight);
-          vec3 col = mix(base, sky, clamp(fres * 0.85, 0.0, 0.7));
-          float spec = pow(max(dot(R, uSunDir), 0.0), 260.0) * 4.0 + pow(max(dot(R, uSunDir), 0.0), 30.0) * 0.12;
+          // 물속으로 비치는 빛(산란)
+          base += uShallow * 0.25 * pow(max(dot(V, -uSunDir) * 0.5 + 0.5, 0.0), 3.0) * max(vCrest, 0.0) * uLight;
+          vec3 col = mix(base, sky, clamp(fres * 0.95, 0.0, 0.85));
+          float spec = pow(max(dot(Rr, uSunDir), 0.0), 320.0) * 5.0 + pow(max(dot(Rr, uSunDir), 0.0), 40.0) * 0.15;
           col += uSunCol * spec * step(0.0, uSunDir.y);
           col = mix(col, vec3(0.94, 0.96, 0.97) * (0.35 + 0.65 * uLight), foam);
           float alpha = mix(0.3, 0.97, smoothstep(0.0, 2.2, depth));
@@ -363,16 +498,27 @@ export class World {
           #include <colorspace_fragment>
         }`,
     });
-    const water = new THREE.Mesh(geo, m);
+    const water = new THREE.Mesh(near, m);
     water.renderOrder = 1;
-    this.scene.add(water);
+    water.frustumCulled = false;
+    const farMesh = new THREE.Mesh(far, m);
+    farMesh.renderOrder = 1;
+    this.scene.add(water, farMesh);
     this.water = water;
   }
 
   // ── 소나무(적송) ──
   buildTrees() {
     const r = rng(this.line === 'west' ? 21 : 11);
-    const bark = new THREE.MeshStandardMaterial({ map: TX.barkTexture(), roughness: 1 });
+    const A = this.assets;
+    let bark;
+    if (A) {
+      const B = A.tex.bark;
+      [B.map, B.normal, B.arm].forEach((t) => t && t.repeat.set(1.5, 7));
+      // 적송: 위로 갈수록 붉은 껍질
+      bark = new THREE.MeshStandardMaterial({ map: B.map, normalMap: B.normal, roughnessMap: B.arm, aoMap: B.arm, color: '#f0a07a', roughness: 1 });
+      bark.normalScale.set(1.4, 1.4);
+    } else bark = new THREE.MeshStandardMaterial({ map: TX.barkTexture(), roughness: 1 });
     const crownM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
     const bend = (y, k) => k * Math.sin(y * 2.6) * y + k * 0.4 * y * y;
     const trunkGeos = [-0.9, 0.6, 1.3].map((k) => {
@@ -427,8 +573,15 @@ export class World {
       this.scene.add(im);
       return im;
     });
-    const nBlobs = trees.length * 5 + 900;
-    const crowns = new THREE.InstancedMesh(blob, crownM, nBlobs);
+    const nBlobs = (trees.length * 5 + 900) * (A ? 4 : 1);
+    let crownGeo = blob, crownMat = crownM;
+    if (A) {
+      crownGeo = needlePad();
+      crownMat = new THREE.MeshStandardMaterial({
+        map: A.tex.needles, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.85, vertexColors: true, alphaToCoverage: true,
+      });
+    }
+    const crowns = new THREE.InstancedMesh(crownGeo, crownMat, nBlobs);
     crowns.castShadow = true;
     crowns.count = 0;
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
@@ -437,7 +590,8 @@ export class World {
       q.setFromAxisAngle(up, rot);
       m4.compose(p.set(x, y, z), q, s.set(sx, sy, sz));
       crowns.setMatrixAt(crowns.count, m4);
-      tint.setHSL(0.27 + r() * 0.05, 0.35 + r() * 0.2, 0.42 + r() * 0.18);
+      if (A) tint.setHSL(0.24 + r() * 0.05, 0.3 + r() * 0.2, 0.32 + r() * 0.16);
+      else tint.setHSL(0.27 + r() * 0.05, 0.35 + r() * 0.2, 0.42 + r() * 0.18);
       crowns.setColorAt(crowns.count, tint);
       crowns.count++;
     };
@@ -454,11 +608,21 @@ export class World {
       const off = bend(1, k) * 0.12 * sw;
       const tx = t.X + Math.cos(t.rot) * off, tz = t.Z - Math.sin(t.rot) * off;
       const top = y0 + trunkH;
-      const n = 3 + Math.floor(r() * 3);
-      for (let j = 0; j < n; j++) {
-        const a = r() * Math.PI * 2, d = j === 0 ? 0 : 1 + r() * 2.2;
-        const sc = (j === 0 ? 3.2 : 2.2 + r() * 1.2) * (t.H / 16);
-        addBlob(tx + Math.cos(a) * d, top - j * 0.7 - r() * 1.2 + 0.6, tz + Math.sin(a) * d, sc, sc * (0.9 + r() * 0.3), sc, r() * 6);
+      if (A) {
+        // 소나무 특유의 층층이 펼쳐진 솔잎 덩어리
+        const n = 11 + Math.floor(r() * 6);
+        for (let j = 0; j < n; j++) {
+          const a = r() * Math.PI * 2, d = j < 3 ? r() * 1.0 : 1.0 + r() * 2.8;
+          const sc = (2.4 + r() * 1.6) * (t.H / 16);
+          addBlob(tx + Math.cos(a) * d, top - r() * 3.2 + 0.5, tz + Math.sin(a) * d, sc * 1.2, sc * 0.75, sc * 1.2, r() * 6);
+        }
+      } else {
+        const n = 3 + Math.floor(r() * 3);
+        for (let j = 0; j < n; j++) {
+          const a = r() * Math.PI * 2, d = j === 0 ? 0 : 1 + r() * 2.2;
+          const sc = (j === 0 ? 3.2 : 2.2 + r() * 1.2) * (t.H / 16);
+          addBlob(tx + Math.cos(a) * d, top - j * 0.7 - r() * 1.2 + 0.6, tz + Math.sin(a) * d, sc, sc * (0.9 + r() * 0.3), sc, r() * 6);
+        }
       }
     }
     // 언덕을 덮은 숲 (덩어리만)
@@ -467,7 +631,8 @@ export class World {
       const hh = hillH(X, Z);
       if (hh < 3 || crowns.count >= nBlobs) continue;
       const sc = 2 + r() * 1.6;
-      addBlob(X, heightAt(X, Z) + sc * 0.3, Z, sc, sc * 0.8, sc, r() * 6);
+      if (A) addBlob(X, heightAt(X, Z) + sc * 0.5, Z, sc * 1.4, sc, sc * 1.4, r() * 6);
+      else addBlob(X, heightAt(X, Z) + sc * 0.3, Z, sc, sc * 0.8, sc, r() * 6);
     }
     trunks.forEach((im) => { im.instanceMatrix.needsUpdate = true; });
     crowns.instanceMatrix.needsUpdate = true;
@@ -508,13 +673,21 @@ export class World {
       v.multiplyScalar(n);
       v.y = v.y * 0.62;
       p.setXYZ(i, v.x, v.y, v.z);
-      const c = S.rock.clone().multiplyScalar(0.82 + vnoise(v.x * 6, v.z * 6) * 0.3);
+      const base = this.assets ? (this.line === 'west' ? new THREE.Color(0.36, 0.3, 0.27) : new THREE.Color(0.86, 0.74, 0.6)) : S.rock.clone();
+      const c = base.multiplyScalar(0.82 + vnoise(v.x * 6, v.z * 6) * 0.3);
       if (v.y < -0.05) c.lerp(S.mussel, smooth(-0.05, -0.3, v.y) * 0.85);
       cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
     geo.computeVertexNormals();
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 });
+    const A = this.assets;
+    let m;
+    if (A) {
+      const T = A.tex.rock;
+      [T.map, T.normal, T.arm].forEach((t) => t && t.repeat.set(2, 2));
+      m = new THREE.MeshStandardMaterial({ vertexColors: true, map: T.map, normalMap: T.normal, roughnessMap: T.arm, aoMap: T.arm, roughness: 1 });
+      m.normalScale.set(1.6, 1.6);
+    } else m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 });
     const im = new THREE.InstancedMesh(geo, m, 260);
     im.castShadow = true;
     im.receiveShadow = true;
@@ -550,6 +723,37 @@ export class World {
     im.instanceMatrix.needsUpdate = true;
     this.scene.add(im);
     this.rockMesh = im;
+
+    // 실제 스캔한 해안 바위 (Poly Haven, CC0)
+    if (A && A.models.rockCluster) {
+      const src = A.models.rockCluster;
+      const sm = src.material.clone();
+      if (this.line === 'east') sm.color.set('#e8d2b0');
+      const cl = new THREE.InstancedMesh(src.geometry, sm, 40);
+      cl.castShadow = cl.receiveShadow = true;
+      cl.count = 0;
+      const put = (X, Z, sc, y) => {
+        q.setFromEuler(new THREE.Euler(0, r() * 6.28, 0));
+        m4.compose(pp.set(X, y, Z), q, s.set(sc, sc * (0.8 + r() * 0.5), sc));
+        cl.setMatrixAt(cl.count++, m4);
+        this.stampDepth(X, Z, 4 * sc, 0.05);
+      };
+      for (let X = 320; X < 386; X += 7 + r() * 5) put(X, shoreZ(X) - 2 - r() * 6, 0.7 + r() * 0.6, -0.5 - r() * 0.4);
+      if (this.line === 'west') for (let i = 0; i < 8; i++) { const X = 195 + r() * 110; put(X, shoreZ(X) - 1 - r() * 5, 0.35 + r() * 0.4, -0.3); }
+      cl.instanceMatrix.needsUpdate = true;
+      this.scene.add(cl);
+    }
+    if (A && A.models.rockShelf) {
+      const src = A.models.rockShelf;
+      const sh = new THREE.Mesh(src.geometry, src.material.clone());
+      if (this.line === 'east') sh.material.color.set('#d9c4a4');
+      sh.scale.setScalar(0.55);
+      sh.position.set(352, -0.6, shoreZ(352) - 8);
+      sh.rotation.y = 0.4;
+      sh.receiveShadow = true;
+      this.scene.add(sh);
+      for (let X = 336; X < 368; X += 3) this.stampDepth(X, shoreZ(352) - 8 + (r() - 0.5) * 10, 5, 0.1);
+    }
   }
 
   // ── 해안 구조물: 동해=방호벽+도로, 서해=사석 축대+산책로 ──
@@ -570,6 +774,14 @@ export class World {
       const roadT = TX.roadTexture();
       roadT.repeat.set(30, 1);
       const road = new THREE.Mesh(new THREE.PlaneGeometry(190, 8), new THREE.MeshStandardMaterial({ map: roadT, roughness: 0.95 }));
+      if (this.assets) {
+        const T = this.assets.tex.asphalt;
+        const a = T.map.clone(); a.repeat.set(24, 1); a.needsUpdate = true;
+        const lines = roadT;
+        road.material = new THREE.MeshStandardMaterial({ map: a, normalMap: T.normal, roughness: 0.9 });
+        const paint = new THREE.Mesh(new THREE.PlaneGeometry(190, 8), new THREE.MeshBasicMaterial({ map: lines, transparent: true, opacity: 0.0 }));
+        paint.visible = false;
+      }
       road.rotation.x = -Math.PI / 2;
       road.position.set(250, heightAt(250, 30.5) + 0.12, 30.5);
       road.receiveShadow = true;
@@ -585,7 +797,8 @@ export class World {
     } else {
       // 사석(깬 화강암 블록) 축대
       const blk = new THREE.DodecahedronGeometry(1, 0);
-      const im = new THREE.InstancedMesh(blk, new THREE.MeshStandardMaterial({ color: '#c9c5bb', roughness: 0.95, flatShading: true }), 1400);
+      const rkT = this.assets && this.assets.tex.rock;
+      const im = new THREE.InstancedMesh(blk, new THREE.MeshStandardMaterial(rkT ? { map: rkT.map, normalMap: rkT.normal, color: '#e6e2da', roughness: 0.95, flatShading: true } : { color: '#c9c5bb', roughness: 0.95, flatShading: true }), 1400);
       im.castShadow = im.receiveShadow = true;
       im.count = 0;
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), tint = new THREE.Color();
@@ -628,9 +841,16 @@ export class World {
   buildPier() {
     const scene = this.scene;
     const r = rng(51);
-    const ct = TX.concreteTexture();
+    let ct = TX.concreteTexture();
     ct.repeat.set(24, 2);
-    const pier = new THREE.Mesh(new THREE.BoxGeometry(96, 6, 10.6), new THREE.MeshStandardMaterial({ map: ct, color: '#cfcdc6', roughness: 0.95 }));
+    let pierM = new THREE.MeshStandardMaterial({ map: ct, color: '#cfcdc6', roughness: 0.95 });
+    if (this.assets) {
+      const T = this.assets.tex.concrete;
+      const cl = (t, sx, sy) => { const c = t.clone(); c.repeat.set(sx, sy); c.needsUpdate = true; return c; };
+      pierM = new THREE.MeshStandardMaterial({ map: cl(T.map, 24, 3), normalMap: cl(T.normal, 24, 3), roughnessMap: cl(T.arm, 24, 3), color: '#f2efe8', roughness: 1 });
+      ct = pierM.map;
+    }
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(96, 6, 10.6), pierM);
     pier.position.set(PIER_X + 48, PIER_TOP - 3, -0.3);
     pier.castShadow = pier.receiveShadow = true;
     scene.add(pier);
@@ -933,6 +1153,49 @@ export class World {
     u.uLight.value = 0.2 + 0.8 * day;
     this.renderer.toneMappingExposure = night ? 1.1 : 0.85;
     this.stars.material.opacity = clamp((0.6 - pal.light) * 2);
+    // 실사 하늘(HDRI): 낮/노을, 밤은 별하늘
+    const A = this.assets;
+    let mode = 'dome';
+    if (A && A.hdr.day && elev > -1) mode = elev < 13 && A.hdr.sunset ? 'sunset' : elev < 13 ? 'sunsetWait' : 'day';
+    if (mode === 'sunsetWait') {
+      if (!this.loadingSunset) {
+        this.loadingSunset = true;
+        loadHDR('belfast_sunset_puresky_2k').then((t) => { if (t) { A.hdr.sunset = t; this.lastHour = -1; } });
+      }
+      mode = 'day';
+    }
+    if (mode !== 'dome') {
+      const t = mode === 'sunset' ? A.hdr.sunset : A.hdr.day;
+      const sunInfo = t.userData.sun;
+      const theta = sunInfo.az - Math.atan2(dir.z, dir.x);
+      this.scene.background = t;
+      this.scene.environment = t;
+      this.scene.backgroundRotation.set(0, theta, 0);
+      this.scene.environmentRotation.set(0, theta, 0);
+      this.scene.backgroundIntensity = mode === 'sunset' ? 0.9 : 1;
+      this.scene.environmentIntensity = 0.45;
+      this.sun.intensity *= 1.2;
+      u.uSky.value = t;
+      u.uHasSky.value = 1;
+      u.uSkyRot.value.setFromMatrix4(new THREE.Matrix4().makeRotationY(-theta));
+      u.uSkyGain.value = this.scene.backgroundIntensity;
+      const hz = sunInfo.horizon;
+      const fogC = new THREE.Color(hz[0], hz[1], hz[2]);
+      const mx = Math.max(fogC.r, fogC.g, fogC.b);
+      if (mx > 1.5) fogC.multiplyScalar(1.5 / mx);
+      this.scene.fog.color.copy(fogC);
+      u.uFogCol.value.copy(fogC);
+      u.uSkyHor.value.copy(fogC);
+      this.sky.visible = false;
+      this.clouds.forEach((c) => { c.visible = false; });
+      this.hemi.intensity *= 0.55;
+    } else {
+      this.scene.background = null;
+      this.scene.environment = null;
+      u.uHasSky.value = 0;
+      this.sky.visible = true;
+      this.clouds.forEach((c) => { c.visible = true; });
+    }
     this.moon.visible = night;
     if (night) {
       const md = new THREE.Vector3(-0.25, 0.35, -1).normalize();
@@ -1435,4 +1698,38 @@ function makeSkyDome() {
   mesh.frustumCulled = false;
   mesh.renderOrder = -1;
   return mesh;
+}
+
+// 솔잎 카드 묶음: 수직 십자 3장 + 수평 1장 (법선은 위쪽으로 부풀려 덩어리처럼 보이게)
+function needlePad() {
+  const quads = [];
+  const mk = (rotY, horizontal) => {
+    const g = new THREE.PlaneGeometry(1, 1);
+    if (horizontal) g.rotateX(-Math.PI / 2);
+    g.rotateY(rotY);
+    return g.toNonIndexed();
+  };
+  quads.push(mk(0), mk(Math.PI / 3), mk((2 * Math.PI) / 3), mk(0.3, true));
+  let n = 0;
+  quads.forEach((q) => { n += q.attributes.position.count; });
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), col = new Float32Array(n * 3);
+  let o = 0;
+  quads.forEach((q) => {
+    const P = q.attributes.position, U = q.attributes.uv;
+    for (let i = 0; i < P.count; i++, o++) {
+      const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      pos.set([x, y, z], o * 3);
+      const len = Math.hypot(x, y * 0.5 + 0.9, z) || 1;
+      nor.set([x / len, (y * 0.5 + 0.9) / len, z / len], o * 3);
+      uv.set([U.getX(i), U.getY(i)], o * 2);
+      const sh = 0.6 + 0.4 * (y + 0.5);
+      col.set([sh, sh, sh], o * 3);
+    }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
 }

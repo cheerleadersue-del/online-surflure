@@ -5,6 +5,7 @@ import {
 import { smooth, hashStr } from './scene.js';
 import { World } from './scene3d.js';
 import { AvatarPreview } from './avatar3d.js';
+import { loadAssets } from './assets.js';
 import { SoundScape } from './audio.js';
 import { Fishing } from './fishing.js';
 import { Store, sampleReports } from './store.js';
@@ -702,4 +703,14 @@ store.init().then((mode) => {
   p.classList.toggle('cloud', shared);
   p.title = shared ? '모든 방문자와 인증글이 공유됩니다' : '서버가 연결되지 않아 이 브라우저에만 저장됩니다';
 });
+// 실사 스캔 자료(질감·하늘·모델) 불러오기
+{
+  const fine = document.querySelector('.fine');
+  const prev = fine ? fine.textContent : '';
+  if (fine) fine.textContent = '🌊 실사 바다 자료를 불러오는 중… (처음 한 번만 조금 걸려요)';
+  loadAssets().then((a) => {
+    scene.setAssets(a);
+    if (fine) fine.textContent = prev;
+  }).catch(() => { if (fine) fine.textContent = prev; });
+}
 requestAnimationFrame(frame);
