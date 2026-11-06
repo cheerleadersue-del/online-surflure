@@ -2,7 +2,9 @@ import {
   LINES, ZONES, WORLD_END, METHODS, AVATAR_OPTIONS, NAME_IDEAS, DEFAULT_AVATAR,
   SPECIES_SUGGEST, BAIT_SUGGEST, TIDE, WEATHER, timeSlot, estWaterTemp, zoneAt,
 } from './data.js';
-import { Scene, smooth, hashStr } from './scene.js';
+import { smooth, hashStr } from './scene.js';
+import { World } from './scene3d.js';
+import { AvatarPreview } from './avatar3d.js';
 import { SoundScape } from './audio.js';
 import { Fishing } from './fishing.js';
 import { Store, sampleReports } from './store.js';
@@ -26,7 +28,8 @@ const METHOD_NAME = { ...Object.fromEntries(Object.values(METHODS).map((m) => [m
 
 // ── 상태 ──
 const audio = new SoundScape();
-const scene = new Scene($('#world'));
+const scene = new World($('#world'));
+let preview = null;
 const store = new Store();
 const profile = load('surflure.profile', {});
 const params = new URLSearchParams(location.search);
@@ -67,7 +70,6 @@ function buildEntry() {
     b.classList.toggle('on', b.dataset.line === st.line);
     b.addEventListener('click', () => {
       st.line = b.dataset.line;
-      scene.line = st.line;
       document.querySelectorAll('.line-card').forEach((x) => x.classList.toggle('on', x === b));
       audio.ui();
       validateEntry();
@@ -114,19 +116,14 @@ function validateEntry() {
 
 function drawPreview(t) {
   const c = $('#avatar-preview');
-  const g = c.getContext('2d');
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  if (c.width !== 200 * dpr) { c.width = 200 * dpr; c.height = 240 * dpr; }
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, 200, 240);
-  scene.drawAvatar(g, 92, 228, 1.6, st.look, { walking: true, phase: t * 5, dir: 1, name: st.look.name || '아이디' });
+  if (!preview) preview = new AvatarPreview(c);
+  preview.render(t, st.look);
 }
 
 function enterSea() {
   audio.start();
   audio.setMuted(false);
   save('surflure.profile', { line: st.line, look: st.look });
-  scene.line = st.line;
   fade(() => {
     $('#entry').hidden = true;
     $('#hud').hidden = false;
@@ -136,6 +133,7 @@ function enterSea() {
     st.avatar.x = 140;
     st.avatar.dir = 1;
     st.camX = 140;
+    scene.snapCam = true;
     zone = null;
     fishing.reset();
     $('#hud-line').textContent = LINES[st.line].name;
@@ -211,6 +209,7 @@ $('#minimap').addEventListener('click', (e) => {
     st.onBoat = false;
     st.avatar.x = Math.max(60, Math.min(WORLD_END - 60, x));
     st.camX = st.avatar.x;
+    scene.snapCam = true;
     fishing.reset();
   }, 350);
 });
@@ -275,6 +274,7 @@ $('#boat-btn').addEventListener('click', () => {
     st.onBoat = boarding;
     st.avatar.x = 7360;
     st.camX = 7360;
+    scene.snapCam = true;
     fishing.reset();
     showBanner(boarding ? '배 위' : '방파제', boarding ? '선상 찌낚시 포인트로 나왔어요. 찌가 잠기면 챔질!' : '선착장으로 돌아왔어요.');
     $('#hud-zone').textContent = boarding ? '배 위 (선상)' : '방파제';
@@ -539,7 +539,7 @@ $('#write-form').addEventListener('submit', async (e) => {
       const f = st.flags.find((x) => x.report.id === item.id);
       if (f) {
         f.plantedAt = performance.now();
-        fade(() => { st.onBoat = false; fishing.reset(); st.avatar.x = f.x - 120; st.camX = st.avatar.x; }, 350);
+        fade(() => { st.onBoat = false; fishing.reset(); st.avatar.x = f.x - 120; st.camX = st.avatar.x; scene.snapCam = true; }, 350);
       }
       toast('🚩 해변에 인증 깃발이 꽂혔어요!');
     } else {
@@ -613,8 +613,7 @@ function frame(now) {
   last = now;
   const t = now / 1000;
   const date = nowDate();
-  scene.hour = date.getHours() + date.getMinutes() / 60;
-  scene.line = st.line || 'east';
+  scene.hourOverride = date.getHours() + date.getMinutes() / 60;
   const av = st.avatar;
 
   if (st.playing) {
@@ -631,8 +630,8 @@ function frame(now) {
     av.walking = !!dir;
     if (dir) {
       av.dir = dir;
-      av.x = Math.max(40, Math.min(WORLD_END - 40, av.x + dir * 190 * dt));
-      av.phase += dt * 9;
+      av.x = Math.max(40, Math.min(WORLD_END - 40, av.x + dir * 100 * dt));
+      av.phase += dt * 7.5;
       const sign = Math.sign(Math.sin(av.phase));
       if (sign !== lastStepSign) {
         lastStepSign = sign;
@@ -679,14 +678,13 @@ function frame(now) {
     audio.update({ forest: 0.2, sea: 0.8, gull: 0.5, rock: 0, boat: 0 }, dt);
   }
 
-  scene.render(st, t);
+  scene.render(st, t, dt);
   requestAnimationFrame(frame);
 }
 
 // ── 시작 ──
 addEventListener('resize', () => scene.resize());
 buildEntry();
-scene.line = st.line || 'east';
 $('#creel-count').textContent = creel.length;
 store.on(() => {
   if (st.playing) rebuildFlags();
