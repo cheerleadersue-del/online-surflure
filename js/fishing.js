@@ -173,8 +173,15 @@ export class Fishing {
       }
       this.emit();
     } else if (s === 'retrieve') {
-      if (this.pressed) this.d -= dt * 0.085;
-      const rate = (this.pressed ? 0.2 : 0.05) * bonus * (0.6 + this.d);
+      // 저킹: 누르고 있으면 낚싯대를 툭툭 쳐올리며 감는다 (0.55초마다 한 번)
+      this.jerkT = (this.jerkT || 0) + (this.pressed ? dt : 0);
+      const ph = (this.jerkT % 0.55) / 0.55;
+      this.jerk = this.pressed ? Math.max(0, Math.sin(Math.min(1, ph / 0.35) * Math.PI)) : 0;
+      if (this.pressed) this.d -= dt * (0.05 + this.jerk * 0.09);
+      if (this.pressed && ph < this.lastJerkPh) this.hooks.onJerk && this.hooks.onJerk();
+      this.lastJerkPh = ph;
+      const boil = env.boil || 1; // 보일링(물고기 떼) 근처면 입질 급증
+      const rate = (this.pressed ? 0.2 + this.jerk * 0.15 : 0.05) * bonus * boil * (0.6 + this.d);
       if (Math.random() < rate * dt) {
         this.fish = this.pickFish(env.line);
         this.audio.hit();
@@ -233,7 +240,7 @@ export class Fishing {
       this.tension = clamp(this.tension, 0.05, 1.2);
       this.progress = clamp(this.progress, 0, 1);
       this.d = this.d0 * (1 - this.progress);
-      this.hooks.onFight && this.hooks.onFight({ running, pressed: this.pressed, tension: this.tension });
+      this.hooks.onFight && this.hooks.onFight({ running, pressed: this.pressed, tension: this.tension, progress: this.progress, fish: f });
       if (running && Math.random() < dt * 6) this.splash(0.5);
       if (this.tension >= 1) {
         this.audio.snap();
@@ -261,7 +268,7 @@ export class Fishing {
     if (this.mode === 'far' && (s === 'waiting' || s === 'bite')) return { noRod: true };
     if (s === 'charging') return { rod: -1.2 - this.power * 1.4 };
     if (s === 'flying') return { rod: lerp(-2.6, -0.45, clamp(this.k * 3)) };
-    if (s === 'retrieve') return { rod: -0.6 + Math.sin(t * 6) * (this.pressed ? 0.05 : 0) };
+    if (s === 'retrieve') return { rod: -0.6 - (this.jerk || 0) * 0.5, jerk: this.jerk || 0 };
     if (s === 'waiting' || s === 'bite') return { rod: -0.7 + (s === 'bite' ? Math.sin(t * 30) * 0.06 : 0) };
     if (s === 'fight') return { rod: -1.0 - Math.sin(t * 9) * 0.05, bend: this.tension };
     if (s === 'result') return { rod: -1.4 };

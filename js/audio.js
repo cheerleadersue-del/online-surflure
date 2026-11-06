@@ -371,6 +371,25 @@ export class SoundScape {
     this._tone('sine', 880, 1320, 0.08, 0.01, 0.25, 0.1);
   }
 
+  // 저킹: 낚싯대를 쳐올릴 때 '휙' + 릴 '틱틱'
+  jerk() {
+    if (!this.ctx) return;
+    const f = this._burst(this.white, 'bandpass', 900, 2, 0.12, 0.01, 0.12);
+    f.frequency.exponentialRampToValueAtTime(2600, this.ctx.currentTime + 0.12);
+    this._click(0.08, 3600);
+    this._click(0.06, 3300);
+  }
+
+  // 보일링 소리 (가까울수록 '촤르르' 물 튀는 소리)
+  boil(dist) {
+    if (!this.ctx || dist > 70) return;
+    const t = this.ctx.currentTime;
+    if (t < (this._nextBoil || 0)) return;
+    this._nextBoil = t + 0.25 + Math.random() * 0.4;
+    const v = 0.14 * (1 - dist / 70);
+    this._burst(this.white, 'bandpass', 1200 + Math.random() * 1800, 1.5, v, 0.005, 0.18);
+  }
+
   // 박수 / 하이파이브 '짝!'
   clap(single = false) {
     if (!this.ctx) return;

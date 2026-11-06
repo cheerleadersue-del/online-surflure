@@ -196,6 +196,7 @@ export class World {
     this.buildAmbient();
     this.buildFishingGear();
     this.buildViewModel();
+    this.buildBoils();
     scene.add(this.camera);
     this.depthTex.needsUpdate = true;
 
@@ -1900,6 +1901,7 @@ export class World {
     if (this.landmarks) this.landmarks.update(t);
     this.turbines.forEach((h, i) => { h.rotation.z = t * 0.6 + i; });
     this.updateViewModel(t, dt);
+    this.updateBoils(t, dt, st);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1919,7 +1921,7 @@ export class World {
       const P = this.player;
       const eye = P.head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.05, 0));
       const fwd = new THREE.Vector3(0, 0, -1);
-      const tgt = this.fpTarget ? this.fpTarget.clone() : eye.clone().add(fwd.multiplyScalar(30));
+      const tgt = this.fpTarget ? this.fpTarget.clone() : eye.clone().add(fwd.multiplyScalar(30)).add(new THREE.Vector3(0, -2.5, 0));
       const sh = this.shake || 0;
       eye.x += (Math.random() - 0.5) * sh * 0.06; eye.y += (Math.random() - 0.5) * sh * 0.05;
       cam.position.lerp(eye, Math.min(1, dt * 10));
@@ -2042,8 +2044,10 @@ export class World {
     if (!vm) return;
     vm.visible = !!this.fpv;
     if (!this.fpv) return;
-    const fi = this.fightInfo || { tension: 0.4, pressed: false, running: false };
-    const bend = clamp(0.35 + fi.tension * 0.7 + (fi.running ? 0.25 : 0), 0, 1.15);
+    const vp = this.vmPose || {};
+    const fighting = !!this.fightInfo;
+    const fi = this.fightInfo || { tension: 0.15, pressed: !!vp.pressed, running: false };
+    const bend = fighting ? clamp(0.35 + fi.tension * 0.7 + (fi.running ? 0.25 : 0), 0, 1.15) : 0.05 + (vp.jerk || 0) * 0.12;
     // 카메라 좌표에서: 손잡이 → 위로 뻗다가 물고기 쪽으로 휘어진다
     const base = new THREE.Vector3(0.2, -0.36, -1.12);
     let dir = new THREE.Vector3(0, 0.35, -1);
@@ -2052,6 +2056,11 @@ export class World {
     }
     const wob = Math.sin(t * (fi.running ? 22 : 9)) * 0.03 * (fi.running ? 2 : 1);
     const up = new THREE.Vector3(-0.08, 1.05, -1.25);
+    // 캐스팅: 힘을 모을수록 어깨 뒤로 젖히고, 던지면 앞으로 휘두른다
+    if (vp.state === 'charging') { up.set(-0.05, 1.25 + vp.power * 0.2, -0.4 + vp.power * 0.75); }
+    else if (vp.state === 'flying') { const k = clamp(vp.k * 4); up.set(-0.06, lerp(1.4, 0.75, k), lerp(0.3, -1.45, k)); }
+    // 저킹: 툭 쳐올렸다 내린다
+    if (vp.jerk) { up.y += vp.jerk * 0.45; up.x -= vp.jerk * 0.12; }
     const c1 = base.clone().add(up.clone().multiplyScalar(1.05));
     const tip = base.clone().add(up.clone().multiplyScalar(1.7 - bend * 0.55)).add(dir.clone().multiplyScalar(0.4 + bend * 1.1));
     tip.y -= bend * 0.9;
@@ -2073,7 +2082,7 @@ export class World {
     this.vmRod.geometry = g;
     this.vmTip.position.copy(tip);
     // 손이 릴을 감는다
-    if (fi.pressed) this.crankAngle += dt * (fi.running ? 9 : 16);
+    if (fi.pressed || vp.pressed) this.crankAngle += dt * (fi.running ? 9 : 16);
     this.vmCrank.rotation.x = this.crankAngle;
     // 낚싯줄: 초리 끝 → 물고기
     if (this.fpTarget) {
@@ -2081,6 +2090,156 @@ export class World {
       const tw = this.vmTip.getWorldPosition(new THREE.Vector3());
       this.setLine(tw, this.fpTarget, (1 - fi.tension) * 1.5);
     }
+  }
+
+  // ── 보일링: 베이트 떼를 쫓는 물고기가 수면을 끓게 하는 곳 ──
+  buildBoils() {
+    this.boils = [];
+    const scene = this.scene;
+    const foamTex = TX.softDot('255,255,255');
+    const fishGeo = new THREE.CapsuleGeometry(0.05, 0.22, 3, 6);
+    fishGeo.rotateZ(Math.PI / 2);
+    const fishM = new THREE.MeshStandardMaterial({ color: '#c9d4dc', metalness: 0.7, roughness: 0.25 });
+    const wing = new THREE.BufferGeometry();
+    wing.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0.15, 0, 0, -0.15, 0.9, 0.1, 0]), 3));
+    const wm = new THREE.MeshBasicMaterial({ color: '#f4f4f2', side: THREE.DoubleSide });
+    for (let i = 0; i < 3; i++) {
+      const g = new THREE.Group();
+      // 하얗게 끓는 물
+      const foam = [];
+      for (let k = 0; k < 14; k++) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: foamTex, transparent: true, depthWrite: false, opacity: 0.8 }));
+        sp.userData = { a: Math.random() * 6.28, r: Math.random() * 3.2, ph: Math.random() * 6.28 };
+        g.add(sp);
+        foam.push(sp);
+      }
+      // 튀어 오르는 베이트·포식어
+      const fish = [];
+      for (let k = 0; k < 10; k++) {
+        const f = new THREE.Mesh(fishGeo, fishM);
+        f.userData = { a: Math.random() * 6.28, r: 0.5 + Math.random() * 3, ph: Math.random() * 6.28, sp: 1.6 + Math.random() * 1.6, big: k < 3 };
+        if (f.userData.big) f.scale.setScalar(3.2);
+        g.add(f);
+        fish.push(f);
+      }
+      // 몰려든 갈매기
+      const birds = [];
+      for (let k = 0; k < 5; k++) {
+        const b = new THREE.Group();
+        const l = new THREE.Mesh(wing, wm), r = new THREE.Mesh(wing, wm);
+        r.scale.x = -1;
+        b.add(l, r);
+        b.userData = { l, r, a: Math.random() * 6.28, h: 5 + Math.random() * 5, rad: 3 + Math.random() * 5, sp: 0.6 + Math.random() * 0.5 };
+        g.add(b);
+        birds.push(b);
+      }
+      // 하늘에서 보이는 표시
+      const mk = new THREE.Sprite(new THREE.SpriteMaterial({ map: TX.labelTexture(['🐟 보일링!', '물고기 떼 발견'], { border: '#ff5a2a', w: 512, h: 168 }), transparent: true, depthTest: false, toneMapped: false, fog: false }));
+      mk.renderOrder = 30;
+      mk.userData.boil = i;
+      g.add(mk);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(5.2, 6, 48), new THREE.MeshBasicMaterial({ color: '#ff5a2a', transparent: true, opacity: 0.0, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.08;
+      g.add(ring);
+      scene.add(g);
+      const b = { g, foam, fish, birds, mk, ring, X: 0, Z: 0, until: 0, i };
+      this.placeBoil(b, true);
+      this.boils.push(b);
+    }
+  }
+
+  // 걸어갈 수 있는 해안 앞바다에 보일링을 놓는다
+  placeBoil(b, first) {
+    let X, Z;
+    if (MODE.sihwa) { X = DIKE.x0 + 30 + Math.random() * (DIKE.x1 - DIKE.x0 - 60); Z = -(DIKE.half + 25 + Math.random() * 45); }
+    else {
+      X = 70 + Math.random() * (PIER_X + PIER_LEN - 90);
+      Z = Math.min(shoreZ(X), X > PIER_X ? -6 : 0) - (22 + Math.random() * 50);
+    }
+    b.X = X; b.Z = Z;
+    b.born = performance.now();
+    b.until = b.born + (first ? 50 + Math.random() * 70 : 70 + Math.random() * 80) * 1000;
+    b.g.position.set(X, 0, Z);
+  }
+
+  updateBoils(t, dt, st) {
+    if (!this.boils) return;
+    const now = performance.now();
+    const sky = this.orbit.dist > 40 && !this.fpv;
+    for (const b of this.boils) {
+      if (now > b.until) this.placeBoil(b, false);
+      const life = clamp((now - b.born) / 4000) * clamp((b.until - now) / 4000);
+      b.foam.forEach((f) => {
+        const u = f.userData;
+        const k = 0.5 + 0.5 * Math.sin(t * 6 + u.ph);
+        f.position.set(Math.cos(u.a + t * 0.3) * u.r, 0.15, Math.sin(u.a + t * 0.3) * u.r);
+        f.scale.setScalar((0.8 + k * 1.6) * life);
+        f.material.opacity = 0.75 * life;
+      });
+      b.fish.forEach((f) => {
+        const u = f.userData;
+        const ph = (t * u.sp + u.ph) % 1.6;
+        const jump = ph < 0.6 ? Math.sin((ph / 0.6) * Math.PI) : -1;
+        f.visible = jump > 0 && life > 0.2;
+        f.position.set(Math.cos(u.a) * u.r + ph * 0.6, jump * (u.big ? 1.4 : 0.6), Math.sin(u.a) * u.r);
+        f.rotation.set(0, u.a, -0.9 + (ph / 0.6) * 1.8);
+      });
+      b.birds.forEach((bd) => {
+        const u = bd.userData;
+        const a = u.a + t * u.sp;
+        bd.position.set(Math.cos(a) * u.rad, u.h + Math.sin(t * 2 + u.a), Math.sin(a) * u.rad);
+        bd.rotation.y = -a;
+        const fl = Math.sin(t * 8 + u.a) * 0.6;
+        u.l.rotation.z = fl; u.r.rotation.z = -fl;
+        bd.visible = life > 0.3;
+      });
+      // 하늘 뷰: 크게 보이는 표시와 주황 원
+      b.mk.visible = sky && life > 0.2;
+      const s = clamp(this.orbit.dist / 12, 4, 26);
+      b.mk.scale.set(s * 3.05, s, 1);
+      b.mk.position.y = 4 + s * 0.8;
+      b.ring.material.opacity = sky ? 0.55 * life * (0.6 + 0.4 * Math.sin(t * 4)) : 0;
+      b.ring.scale.setScalar(sky ? 1 + 0.15 * Math.sin(t * 3) : 1);
+    }
+    // 가까운 보일링 소리
+    if (st && !st.hideAvatar && this.audioHook) {
+      let best = Infinity;
+      for (const b of this.boils) best = Math.min(best, Math.hypot(b.X - st.avatar.X, b.Z - st.avatar.Z));
+      this.audioHook(best);
+    }
+  }
+
+  // 루어가 보일링 안에 있으면 입질 배율
+  boilFactor() {
+    if (!this.boils || !this.lureWorld) return 1;
+    let f = 1;
+    for (const b of this.boils) {
+      const d = Math.hypot(this.lureWorld.x - b.X, this.lureWorld.z - b.Z);
+      if (d < 9) f = Math.max(f, 6 - d * 0.45);
+      else if (d < 20) f = Math.max(f, 1.6);
+    }
+    return f;
+  }
+
+  hitBoil(px, py) {
+    if (!this.boils) return null;
+    const rect = this.cv.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((px - rect.left) / rect.width) * 2 - 1, -((py - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const vis = this.boils.filter((b) => b.mk.visible).map((b) => b.mk);
+    const hit = this.raycaster.intersectObjects(vis, false)[0];
+    return hit ? this.boils[hit.object.userData.boil] : null;
+  }
+
+  // 보일링 정면의 물가로 옮기고 바다를 바라보게
+  goToBoil(av, b) {
+    this.placeAt(av, b.X / M, null);
+    av.yaw = Math.PI;
+    const yaw = Math.atan2(-(b.X - av.X), -(b.Z - av.Z));
+    this.orbit.tYaw = this.orbit.yaw = yaw;
+    this.orbit.tDist = 9; this.orbit.tPitch = 0.3;
+    this.snapCam = true;
   }
 
   // ── 함께 있는 사람들 ──
@@ -2358,7 +2517,7 @@ export class World {
     this.fish.visible = false;
     this.stand.visible = false;
     this.rings.forEach((r) => { r.material.opacity = 0; });
-    if (hide) return;
+    if (hide) { this.fpTarget = null; this.lureWorld = null; return; }
     P.group.updateMatrixWorld(true);
     let tip = P.tipWorld(new THREE.Vector3());
     const boat = st.onBoat;
@@ -2393,6 +2552,7 @@ export class World {
       if (s === 'fight') lp.x += Math.sin(t * 7) * (f.run > 0 ? 1.4 : 0.5);
     }
     this.fpTarget = lp.clone();
+    if (s !== 'flying') this.lureWorld = lp.clone();
     const sag = s === 'fight' ? (1 - f.tension) * 2.5 : s === 'flying' ? 0 : 3.5;
     this.setLine(tip, lp, sag);
     if (s === 'flying') {
