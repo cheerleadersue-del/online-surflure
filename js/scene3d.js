@@ -741,21 +741,28 @@ export class World {
       hill(150, -520, 70, 30, '#3a4e33', '#8a7a66');
       hill(820, -700, 140, 40, '#5b6a5a');
       hill(-200, -900, 200, 35, '#6b7768');
-      // 섬을 잇는 다리
+      // 육지에서 섬으로 이어지는 다리
       const deckM = new THREE.MeshStandardMaterial({ color: '#d9d8d2', roughness: 0.8 });
-      const deck = new THREE.Mesh(new THREE.BoxGeometry(520, 1.4, 9), deckM);
-      deck.position.set(260, 14, -230);
-      deck.rotation.y = -0.18;
+      const A = new THREE.Vector3(505, 0, -2), B = new THREE.Vector3(548, 0, -170);
+      const len = A.distanceTo(B), ang = Math.atan2(B.x - A.x, B.z - A.z);
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(8, 1.2, len), deckM);
+      deck.position.set((A.x + B.x) / 2, 12, (A.z + B.z) / 2);
+      deck.rotation.y = ang;
       deck.castShadow = true;
       scene.add(deck);
-      for (let i = 0; i <= 8; i++) {
-        const k = i / 8 - 0.5;
-        const x = 260 + k * 520 * Math.cos(0.18), z = -230 + k * 520 * Math.sin(0.18);
-        const pier = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.8, 16, 12), deckM);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(8.2, 1, len), new THREE.MeshStandardMaterial({ color: '#eef0ee', wireframe: true }));
+      rail.position.set(deck.position.x, 13, deck.position.z);
+      rail.rotation.y = ang;
+      scene.add(rail);
+      for (let i = 1; i < 8; i++) {
+        const k = i / 8;
+        const x = lerp(A.x, B.x, k), z = lerp(A.z, B.z, k);
+        const pier = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.5, 12, 12), deckM);
         pier.position.set(x, 6, z);
+        pier.castShadow = true;
         scene.add(pier);
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(6, 3, 5), deckM);
-        foot.position.set(x, 0.2, z);
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(5, 2.5, 4), deckM);
+        foot.position.set(x, 0, z);
         scene.add(foot);
       }
     } else {
