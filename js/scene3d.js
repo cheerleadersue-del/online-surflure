@@ -3,10 +3,14 @@ import * as THREE from '../vendor/three/three.module.min.js';
 import { Avatar } from './avatar3d.js';
 import { loadHDR } from './assets.js';
 import { makeRealFish, flop, fishLook } from './fish3d.js';
+import { Landmarks } from './landmarks.js';
 import * as TX from './textures.js';
 import { rng, smooth, lerp, clamp, skyAt, hashStr } from './scene.js';
 
 export const M = 0.06; // 게임 좌표(px) → 미터
+// 시화방조제 모드 (양쪽이 바다인 긴 방조제)
+const MODE = { sihwa: false };
+const DIKE = { x0: 150, x1: 690, half: 7, top: 3.2 };
 // 해안선 구간(미터): 숲 → 모랫길 → 모래해변 → 몽돌해변 → 해안 데크길(절벽) → 갯바위 → 방파제
 const LAY = { beach0: 174, peb0: 318, deck0: 390, deck1: 462, rock0: 462, pier0: 546, end: 640 };
 const PIER_X = LAY.pier0, PIER_TOP = 2.6, PIER_LEN = 94;
@@ -27,7 +31,9 @@ function vnoise(x, z) {
 const fbm = (x, z) => vnoise(x, z) * 0.5 + vnoise(x * 2.1 + 5, z * 2.1) * 0.25 + vnoise(x * 4.3, z * 4.3 + 3) * 0.125;
 
 export function shoreZ(X) {
-  let z = lerp(-170, -13 + Math.sin(X * 0.035) * 2.5, smooth(95, 172, X));
+  if (MODE.sihwa) return -DIKE.half - 1.2;
+  // 소나무 숲길 없이 처음부터 해변
+  let z = -13 + Math.sin(X * 0.035) * 2.5;
   // 몽돌 해변: 안쪽으로 둥글게 들어간 작은 만
   const cove = smooth(LAY.peb0 - 6, LAY.peb0 + 8, X) * (1 - smooth(LAY.deck0 - 12, LAY.deck0 + 2, X));
   z = lerp(z, -6 + 5 * Math.sin(((X - LAY.peb0) / (LAY.deck0 - LAY.peb0)) * Math.PI) - 4, cove);
@@ -54,9 +60,17 @@ function cliffH(X, Z) {
   return k * 8.5 * smooth(5.2, 9, dz) * (0.85 + fbm(X * 0.2, Z * 0.2) * 0.3);
 }
 function heightAt(X, Z) {
+  if (MODE.sihwa) {
+    // 방조제 둑(사석 경사) + 양쪽 바다/호수 바닥
+    const d = Math.abs(Z) - DIKE.half;
+    const inX = smooth(DIKE.x0 - 6, DIKE.x0, X) * (1 - smooth(DIKE.x1, DIKE.x1 + 6, X));
+    const bank = d < 0 ? DIKE.top - 0.4 : Math.max(-5, DIKE.top - 0.4 - d * 0.9);
+    const floor = -5 + fbm(X * 0.02, Z * 0.02) * 1.5;
+    return lerp(floor, Math.max(bank, floor), inX);
+  }
   const sz = shoreZ(X);
   const dz = Z - sz;
-  const forest = 1 - smooth(100, 170, X);
+  const forest = 0;
   let h;
   if (dz < 0) h = dz > -25 ? dz * 0.07 : Math.max(-16, -1.75 + (dz + 25) * 0.15);
   else h = dz < 22 ? dz * 0.065 : 1.43 + Math.min(dz - 22, 80) * 0.018;
@@ -163,16 +177,26 @@ export class World {
     this.colliders = [];
     this.rockTops = [];
     this.walkMeshes = [];
+    MODE.sihwa = !!(this.point && this.point.type === 'dike');
+    this.turbines = [];
+    this.landmarks = null;
     this.buildTerrain();
     this.buildWater();
     this.buildTrees();
-    this.buildRocks();
-    this.buildCoastStructures();
-    this.buildPier();
-    this.buildCoveAndDeck();
+    if (MODE.sihwa) {
+      this.buildSihwa();
+    } else {
+      this.buildRocks();
+      this.buildCoastStructures();
+      this.buildPier();
+      this.buildCoveAndDeck();
+    }
     this.buildDistant();
+    this.buildLandmark();
     this.buildAmbient();
     this.buildFishingGear();
+    this.buildViewModel();
+    scene.add(this.camera);
     this.depthTex.needsUpdate = true;
 
     // 아바타 & 낚시꾼들
@@ -233,7 +257,7 @@ export class World {
         else c.copy(S.wet).lerp(S.dry, smooth(1.5, 6, dz));
         c.multiplyScalar(0.92 + n * 0.16);
         // 숲 바닥
-        const f = 1 - smooth(112, 168, X);
+        const f = 0;
         if (f > 0 && dz > 0) {
           const fc = forestC.clone().lerp(mossC, smooth(0.45, 0.7, n)).lerp(needleC, smooth(0.55, 0.8, fbm(X * 0.4, Z * 0.4)) * 0.6);
           const p = 1 - smooth(1.2, 2.6, Math.abs(Z + Math.sin(X * 0.05) * 0.4));
@@ -602,15 +626,12 @@ export class World {
         }
       }
     };
-    // 숲길 양옆의 울창한 솔숲
-    place(-80, 175, -150, 80, 6.5, (X, Z) => (1 - smooth(105, 172, X)) * (Math.abs(Z) < 12 ? 0.95 : 0.8), 11, 19,
-      (X, Z) => Math.abs(Z + Math.sin(X * 0.05) * 0.4) < 3.6 || shoreZ(X) + 6 > Z);
-    // 해변 뒤 방풍림
-    place(150, LAY.deck0 - 30, 36, 90, 7.5, () => 0.55, 9, 15);
-    // 절벽 위 소나무 (데크길 뒤)
-    place(LAY.deck0 + 6, LAY.deck1 - 6, 3, 40, 6, (X, Z) => (cliffH(X, Z) > 6 ? 0.7 : 0), 7, 12);
-    // 미로 같은 숲: 길 밖에도 굽이진 오솔길 사이로 빽빽하게
-    place(-60, 120, 14, 70, 5.2, (X, Z) => ((Math.sin(X * 0.09) * Math.cos(Z * 0.13) > 0.35) ? 0 : 0.75), 10, 17);
+    if (!MODE.sihwa) {
+      // 해변 뒤 방풍림
+      place(40, LAY.deck0 - 30, 36, 90, 7.5, () => 0.55, 9, 15);
+      // 절벽 위 소나무 (데크길 뒤)
+      place(LAY.deck0 + 6, LAY.deck1 - 6, 3, 40, 6, (X, Z) => (cliffH(X, Z) > 6 ? 0.7 : 0), 7, 12);
+    }
     const counts = [0, 0, 0];
     trees.forEach((t) => counts[t.v]++);
     const trunks = trunkGeos.map((g, i) => {
@@ -693,9 +714,8 @@ export class World {
     blade.translate(0, 0.35, 0);
     const grass = new THREE.InstancedMesh(blade, new THREE.MeshStandardMaterial({ color: '#8d9353', roughness: 1 }), 2600);
     grass.count = 0;
-    for (let i = 0; i < 520; i++) {
-      const X = 95 + r() * 90, side = r() < 0.5 ? -1 : 1, Z = side * (3 + r() * 9);
-      if (Z < shoreZ(X) + 7) continue;
+    for (let i = 0; i < (MODE.sihwa ? 0 : 520); i++) {
+      const X = 60 + r() * 250, Z = shoreZ(X) + 16 + r() * 12;
       const y = heightAt(X, Z);
       for (let b = 0; b < 5 && grass.count < 2600; b++) {
         q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.7, r() * 6, (r() - 0.5) * 0.7));
@@ -875,11 +895,12 @@ export class World {
       walk.receiveShadow = true;
       scene.add(walk);
     }
-    // 모랫길 밧줄 울타리
+    if (MODE.sihwa) return;
+    // 해변 밧줄 울타리
     const postM = new THREE.MeshStandardMaterial({ color: '#7b5a3a', roughness: 1 });
     const pts = [];
-    for (let X = 112; X < 178; X += 3.5) {
-      const Z = -3.2, y = heightAt(X, Z);
+    for (let X = 60; X < 300; X += 3.5) {
+      const Z = shoreZ(X) + 15, y = heightAt(X, Z);
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.9, 6), postM);
       post.position.set(X, y + 0.45, Z);
       post.castShadow = true;
@@ -1004,6 +1025,213 @@ export class World {
       scene.add(bu);
       this.buoys.push(bu);
     }
+  }
+
+  // ── 입장 포인트 ──
+  setPoint(point, line) {
+    this.point = point;
+    this.line = null; // 다음 render에서 다시 짓는다
+    this.pendingLine = line;
+    this.build(line);
+  }
+
+  // 포인트별 처음 서는 곳(px)과 카메라 방향
+  spawn() {
+    const t = this.point ? this.point.type : 'beach';
+    let sp;
+    if (t === 'dike') sp = { x: 400 / M, z: -4.5, yaw: -1.25 };
+    else if (t === 'beach') sp = { x: 215 / M, z: null, yaw: -1.1 };
+    else sp = { x: (PIER_X + 22) / M, z: -1.5, yaw: -1.0 };
+    // 상징 배경이 화면에 들어오게 카메라를 돌린다 (바다 쪽으로 살짝)
+    const L = this.landmarkPos;
+    if (L) {
+      const ax = sp.x * M, az = sp.z ?? shoreZ(ax) + 4;
+      const yl = Math.atan2(-(L.x - ax), -(L.z - az));
+      // 상징물과 바다가 함께 보이도록 바다 쪽(-Z)을 향해 0.6rad 돌린다
+      sp.yaw = Math.cos(yl + 0.6) > Math.cos(yl - 0.6) ? yl + 0.6 : yl - 0.6;
+    }
+    return sp;
+  }
+
+  // ── 시화방조제: 곧게 뻗은 둑길, 양쪽 바다, 달 전망대, 조력발전소 수문 ──
+  buildSihwa() {
+    const scene = this.scene;
+    const r = rng(77);
+    const len = DIKE.x1 - DIKE.x0, cx = (DIKE.x0 + DIKE.x1) / 2;
+    const conc = this.assets ? this.assets.tex.concrete : null;
+    const roadM = new THREE.MeshStandardMaterial({ color: '#8d8f91', roughness: 0.9, map: this.assets ? this.assets.tex.asphalt.map : null });
+    const edgeM = new THREE.MeshStandardMaterial({ color: '#d9d6cf', roughness: 0.95, map: conc ? conc.map : null });
+    // 둑 몸체 + 도로 + 보도
+    const body = new THREE.Mesh(new THREE.BoxGeometry(len, 6, DIKE.half * 2), edgeM);
+    body.position.set(cx, DIKE.top - 3, 0);
+    body.receiveShadow = true;
+    scene.add(body);
+    const road = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, 7), roadM);
+    road.position.set(cx, DIKE.top + 0.02, 1.5);
+    road.receiveShadow = true;
+    scene.add(road);
+    // 차선
+    const laneM = new THREE.MeshBasicMaterial({ color: '#f2c230' });
+    const lane = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, 0.15), laneM);
+    lane.position.set(cx, DIKE.top + 0.08, 1.5);
+    scene.add(lane);
+    // 바다 쪽 난간 + 낚시하는 보도
+    const railM = new THREE.MeshStandardMaterial({ color: '#2f6fb0', roughness: 0.5, metalness: 0.4 });
+    [-DIKE.half + 0.3, DIKE.half - 0.3].forEach((z) => {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 0.07), railM);
+      rail.position.set(cx, DIKE.top + 1.0, z);
+      scene.add(rail);
+      for (let X = DIKE.x0; X < DIKE.x1; X += 3) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.0, 0.07), railM);
+        post.position.set(X, DIKE.top + 0.5, z);
+        scene.add(post);
+      }
+    });
+    this.walkMeshes.push(body, road);
+    // 양쪽 테트라포드
+    const legs = [];
+    const dirs = [[0, 1, 0], [0.943, -0.333, 0], [-0.471, -0.333, 0.816], [-0.471, -0.333, -0.816]];
+    dirs.forEach((d) => {
+      const g = new THREE.CylinderGeometry(0.35, 0.75, 1.6, 8);
+      g.translate(0, 0.8, 0);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...d)));
+      legs.push(g.toNonIndexed());
+    });
+    const tetra = new THREE.InstancedMesh(mergeGeos(legs), new THREE.MeshStandardMaterial({ color: '#c3c1b9', roughness: 0.95 }), 1200);
+    tetra.castShadow = tetra.receiveShadow = true;
+    tetra.count = 0;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3();
+    for (let X = DIKE.x0; X < DIKE.x1; X += 2.3) {
+      for (const side of [-1, 1]) {
+        for (let row = 0; row < 2; row++) {
+          const Z = side * (DIKE.half + 1.4 + row * 2.2) + (r() - 0.5);
+          q.setFromEuler(new THREE.Euler(r() * 6, r() * 6, r() * 6));
+          m4.compose(pv.set(X + (r() - 0.5), 0.6 - row * 1.1 + r() * 0.6, Z), q, sv.setScalar(1));
+          tetra.setMatrixAt(tetra.count++, m4);
+          this.stampDepth(X, Z, 2.2, 0.05);
+        }
+      }
+    }
+    tetra.instanceMatrix.needsUpdate = true;
+    scene.add(tetra);
+    // 달 전망대: 높은 기둥 + 둥근 달 모양 전망대
+    const tower = new THREE.Group();
+    tower.position.set(470, DIKE.top, 0);
+    const white = new THREE.MeshStandardMaterial({ color: '#f1f2f4', roughness: 0.35, metalness: 0.2 });
+    const glass = new THREE.MeshStandardMaterial({ color: '#7fb7e0', roughness: 0.1, metalness: 0.6, transparent: true, opacity: 0.85 });
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.6, 52, 24), white);
+    col.position.y = 26;
+    const moon = new THREE.Mesh(new THREE.TorusGeometry(9, 2.2, 20, 60, Math.PI * 1.55), glass);
+    moon.position.y = 60;
+    moon.rotation.z = -0.4;
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 3, 32), white);
+    disc.position.y = 52;
+    tower.add(col, moon, disc);
+    tower.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    scene.add(tower);
+    // 조력발전소 수문 (둑을 가로지르는 회색 건물 띠)
+    const gateM = new THREE.MeshStandardMaterial({ color: '#b9bcc0', roughness: 0.8 });
+    for (let i = 0; i < 8; i++) {
+      const g = new THREE.Mesh(new THREE.BoxGeometry(5, 7, 4), gateM);
+      g.position.set(560 + i * 7, DIKE.top + 1, DIKE.half + 6);
+      g.castShadow = true;
+      scene.add(g);
+    }
+    // 풍력발전기 (먼 호수 쪽)
+    const bladeM = new THREE.MeshStandardMaterial({ color: '#f4f4f4' });
+    this.turbines = [];
+    for (let i = 0; i < 5; i++) {
+      const t = new THREE.Group();
+      t.position.set(250 + i * 70, 0, 160 + (i % 2) * 40);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.4, 50, 12), bladeM);
+      pole.position.y = 25;
+      const hub = new THREE.Group();
+      hub.position.y = 50;
+      for (let k = 0; k < 3; k++) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(1.2, 22, 0.3), bladeM);
+        b.position.y = 11;
+        const arm = new THREE.Group();
+        arm.rotation.z = (k / 3) * Math.PI * 2;
+        arm.add(b);
+        hub.add(arm);
+      }
+      t.add(pole, hub);
+      scene.add(t);
+      this.turbines.push(hub);
+    }
+    // 배·부표·등대 대체물
+    this.boat = makeBoat();
+    this.boat.position.set(420, 0, -55);
+    this.boat.visible = false;
+    scene.add(this.boat);
+    this.mooredBoat = makeBoat();
+    this.mooredBoat.position.set(600, 0, -24);
+    this.mooredBoat.rotation.y = Math.PI / 2;
+    scene.add(this.mooredBoat);
+    this.lampM = new THREE.MeshStandardMaterial();
+    this.beam = new THREE.Object3D();
+    this.sailing = [];
+    for (let i = 0; i < 3; i++) {
+      const b = makeBoat();
+      b.userData = { z: -160 - r() * 200, sp: (r() < 0.5 ? -1 : 1) * (2 + r() * 3), x0: r() * 800 };
+      b.rotation.y = b.userData.sp > 0 ? -Math.PI / 2 : Math.PI / 2;
+      scene.add(b);
+      this.sailing.push(b);
+    }
+    this.buoys = [];
+  }
+
+  // ── 포인트를 상징하는 배경 ──
+  buildLandmark() {
+    const pt = this.point;
+    // 포인트 이름 표지판
+    const sp = this.spawn();
+    const sx = sp.x * M + 6, sz = MODE.sihwa ? -DIKE.half + 0.6 : (sp.z ?? shoreZ(sp.x * M) + 4) + 3.5;
+    if (pt) {
+      const sign = new THREE.Group();
+      const wood = new THREE.MeshStandardMaterial({ color: '#7a5a3a', roughness: 0.9 });
+      [-0.8, 0.8].forEach((x) => { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 2.4, 8), wood); p.position.set(x, 1.2, 0); p.castShadow = true; sign.add(p); });
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.8), new THREE.MeshBasicMaterial({ map: TX.labelTexture([pt.name, pt.desc.slice(0, 18)], { border: '#1f3b73', w: 768, h: 256 }), toneMapped: false, side: THREE.DoubleSide }));
+      board.position.y = 2.1;
+      sign.add(board);
+      const ground = this.surfaceAt(sx, sz).y;
+      sign.position.set(sx, ground, sz);
+      sign.rotation.y = 0.5;
+      this.scene.add(sign);
+    }
+    if (MODE.sihwa) this.landmarkPos = { x: 470, z: 30 };
+    if (!pt || MODE.sihwa) return;
+    const L = new Landmarks(this.scene, (X, Z) => heightAt(X, Z), this.assets);
+    this.landmarkPos = null;
+    const bx = 262, bz = shoreZ(262) + 34; // 해변 포인트: 해변 오른쪽 뒤
+    const px = PIER_X + 40, pz = 24; // 방파제·항구: 방파제 뒤 육지
+    switch (pt.mark) {
+      case 'villa': L.villa(bx, bz + 6); this.landmarkPos = { x: bx, z: bz }; break;
+      case 'wheel': L.wheel(bx - 8, bz - 4); break;
+      case 'statue': L.statue(bx, bz + 14); break;
+      case 'pavilion': L.pavilion(bx, bz + 10, 1.4); break;
+      case 'cabins': L.cabins(bx - 30, bz - 6); break;
+      case 'resort': L.resort(bx - 10, bz + 4); break;
+      case 'rockPavilion': L.pavilion(PIER_X + 70, -14, 1.1, true); break;
+      case 'twinLights': L.lighthouse(PIER_X + 60, -22, '#f4f2ec'); break;
+      case 'cafes': L.cafes(PIER_X - 30, 18); break;
+      case 'cliffLight': L.cliff(PIER_X + 20, 30); break;
+      case 'market': L.boats(PIER_X + 10, -16, 10); L.market(px - 30, pz); break;
+      case 'boats': L.boats(PIER_X + 10, -16, 8, true); L.lighthouse(PIER_X + 52, -24, '#f4f2ec', true); break;
+      case 'village': L.boats(PIER_X + 20, -16, 5); L.village(PIER_X + 30, 40); break;
+      case 'racks': L.boats(PIER_X + 15, -16, 6); L.racks(PIER_X - 10, 16); break;
+      case 'skywalk': L.boats(PIER_X + 15, -16, 4); L.skywalk(PIER_X - 40, -6); break;
+      default:
+    }
+    if (!this.landmarkPos) {
+      const P = {
+        wheel: [bx - 8, bz - 4], statue: [bx, bz + 14], pavilion: [bx, bz + 10], cabins: [bx - 6, bz], resort: [bx, bz + 4],
+        rockPavilion: [PIER_X + 70, -14], twinLights: [PIER_X + 60, -22], cafes: [PIER_X, 18], cliffLight: [PIER_X + 20, 30],
+        market: [px - 30, pz], boats: [PIER_X + 40, -24], village: [PIER_X + 30, 50], racks: [PIER_X, 20], skywalk: [PIER_X - 40, -40],
+      }[pt.mark];
+      if (P) this.landmarkPos = { x: P[0], z: P[1] };
+    }
+    this.landmarks = L;
   }
 
   // ── 방파제: 테트라포드 + 빨간 등대 (서해는 노란 부잔교도) ──
@@ -1564,7 +1792,7 @@ export class World {
     if (av.walking || fishingPose) this.playerAct = null;
     P.pose({ walking: av.walking, phase: av.phase, rodE: pose.rod != null ? -pose.rod : 1.25, bend: pose.bend || 0, noRod: !!pose.noRod, t,
       action: act && act.name, actionT: act ? (performance.now() - act.t0) / 1000 : 0 });
-    P.setFirstPerson(!!this.fpv && !st.hideAvatar);
+    P.group.visible = !st.hideAvatar && !this.fpv;
     P.group.position.set(ax, ay + P.bob, az);
     const yawTarget = fishingPose || st.onBoat ? Math.PI : (av.yaw ?? Math.PI / 2);
     P.group.rotation.y += angDiff(yawTarget, P.group.rotation.y) * Math.min(1, dt * 10);
@@ -1585,7 +1813,8 @@ export class World {
     this.npcs.forEach(({ a, n }, i) => {
       if (n.X == null) {
         n.X = n.x * M;
-        if (n.X > PIER_X) n.Z = -3.6;
+        if (MODE.sihwa) { n.X = clamp(n.X, DIKE.x0 + 5, DIKE.x1 - 5); n.Z = -5.6; }
+        else if (n.X > PIER_X) n.Z = -3.6;
         else {
           // 물가에서 가장 높은 바위 위 또는 물가 모래
           n.Z = shoreZ(n.X) + 2.2;
@@ -1668,6 +1897,9 @@ export class World {
     });
     this.clouds.forEach((c) => { c.position.x += c.userData.v * dt; if (c.position.x > 1200) c.position.x = -600; });
     if (this.beam.visible) this.beam.rotation.y = t * 0.9;
+    if (this.landmarks) this.landmarks.update(t);
+    this.turbines.forEach((h, i) => { h.rotation.z = t * 0.6 + i; });
+    this.updateViewModel(t, dt);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1737,6 +1969,118 @@ export class World {
     this.camLook.lerp(look, Math.min(1, dt * 8));
     cam.lookAt(this.camLook);
     if (this.shake) cam.position.add(new THREE.Vector3((Math.random() - 0.5) * this.shake * 0.08, (Math.random() - 0.5) * this.shake * 0.06, 0));
+  }
+
+  // ── 1인칭 뷰모델: 휘어지는 낚싯대 + 릴을 감는 손 ──
+  buildViewModel() {
+    const vm = (this.vm = new THREE.Group());
+    vm.visible = false;
+    const skin = new THREE.MeshPhysicalMaterial({ color: '#f6d2b4', roughness: 0.55, clearcoat: 0.2 });
+    const sleeve = new THREE.MeshPhysicalMaterial({ color: '#f26b1d', roughness: 0.75, sheen: 0.5 });
+    this.vmRodMat = new THREE.MeshPhysicalMaterial({ color: '#15171a', roughness: 0.25, clearcoat: 0.9 });
+    // 손잡이(EVA 그립)
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.42, 12), new THREE.MeshStandardMaterial({ color: '#2b2b2b', roughness: 0.9 }));
+    grip.rotation.x = Math.PI / 2 - 0.75;
+    grip.position.set(0.2, -0.44, -1.0);
+    vm.add(grip);
+    // 오른손: 그립을 쥔 손 + 소매
+    const rh = new THREE.Group();
+    rh.position.set(0.21, -0.36, -1.08);
+    rh.add(new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 12), skin));
+    const rs = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.4, 6, 12), sleeve);
+    rs.position.set(0.12, -0.18, 0.18);
+    rs.rotation.set(0.9, 0, 0.55);
+    rh.add(rs);
+    vm.add(rh);
+    // 릴 (색은 장비에 따라) — 낚싯대 아래에 매달려 있다
+    const reel = (this.vmReel = new THREE.Group());
+    reel.position.set(0.2, -0.43, -1.13);
+    this.vmReelMat = new THREE.MeshPhysicalMaterial({ color: '#9aa3ad', metalness: 0.8, roughness: 0.25, clearcoat: 0.6 });
+    const spool = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.05, 20), this.vmReelMat);
+    spool.rotation.x = Math.PI / 2 - 0.75;
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10), this.vmReelMat);
+    body.position.set(-0.04, 0.01, 0.01);
+    reel.add(spool, body);
+    // 핸들 (회전) + 왼손
+    const crank = (this.vmCrank = new THREE.Group());
+    crank.position.set(-0.08, 0.01, 0.01);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.08, 0.01), this.vmReelMat);
+    arm.position.y = 0.04;
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.035, 10), new THREE.MeshStandardMaterial({ color: '#222' }));
+    knob.position.set(-0.02, 0.08, 0);
+    knob.rotation.z = Math.PI / 2;
+    const lh = new THREE.Group();
+    lh.position.set(-0.05, 0.08, 0);
+    lh.add(new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 12), skin));
+    const ls = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.4, 6, 12), sleeve);
+    ls.position.set(-0.16, -0.17, 0.18);
+    ls.rotation.set(0.9, 0, -0.75);
+    lh.add(ls);
+    crank.add(arm, knob, lh);
+    reel.add(crank);
+    vm.add(reel);
+    // 휘어지는 낚싯대(매 프레임 다시 만든다)
+    this.vmRod = new THREE.Mesh(new THREE.BufferGeometry(), this.vmRodMat);
+    vm.add(this.vmRod);
+    this.vmTip = new THREE.Object3D();
+    vm.add(this.vmTip);
+    vm.traverse((o) => { o.renderOrder = 20; if (o.material) { o.material.depthTest = true; } });
+    this.camera.add(vm);
+    this.crankAngle = 0;
+  }
+
+  setGearLook(gear) {
+    if (!this.vmRodMat) return;
+    const rod = { bamboo: '#c9a55a', standard: '#1a1c20', premium: '#14306a' }[gear.rod] || '#15171a';
+    const reel = { basic: '#8f979f', ultegra: '#cfd6dc', stella: '#d9c27a', vanquish: '#3b4f7a' }[gear.reel] || '#9aa3ad';
+    this.vmRodMat.color.set(rod);
+    this.vmReelMat.color.set(reel);
+  }
+
+  updateViewModel(t, dt) {
+    const vm = this.vm;
+    if (!vm) return;
+    vm.visible = !!this.fpv;
+    if (!this.fpv) return;
+    const fi = this.fightInfo || { tension: 0.4, pressed: false, running: false };
+    const bend = clamp(0.35 + fi.tension * 0.7 + (fi.running ? 0.25 : 0), 0, 1.15);
+    // 카메라 좌표에서: 손잡이 → 위로 뻗다가 물고기 쪽으로 휘어진다
+    const base = new THREE.Vector3(0.2, -0.36, -1.12);
+    let dir = new THREE.Vector3(0, 0.35, -1);
+    if (this.fpTarget) {
+      dir = this.camera.worldToLocal(this.fpTarget.clone()).normalize();
+    }
+    const wob = Math.sin(t * (fi.running ? 22 : 9)) * 0.03 * (fi.running ? 2 : 1);
+    const up = new THREE.Vector3(-0.08, 1.05, -1.25);
+    const c1 = base.clone().add(up.clone().multiplyScalar(1.05));
+    const tip = base.clone().add(up.clone().multiplyScalar(1.7 - bend * 0.55)).add(dir.clone().multiplyScalar(0.4 + bend * 1.1));
+    tip.y -= bend * 0.9;
+    tip.x += wob;
+    const curve = new THREE.QuadraticBezierCurve3(base, c1, tip);
+    const g = new THREE.TubeGeometry(curve, 28, 0.01, 6, false);
+    // 끝으로 갈수록 가늘게
+    const p = g.attributes.position;
+    const n = 28 + 1, rs = 6 + 1;
+    for (let i = 0; i < n; i++) {
+      const k = 1 - (i / (n - 1)) * 0.7;
+      const ctr = curve.getPoint(i / (n - 1));
+      for (let j = 0; j < rs; j++) {
+        const idx = i * rs + j;
+        p.setXYZ(idx, ctr.x + (p.getX(idx) - ctr.x) * k, ctr.y + (p.getY(idx) - ctr.y) * k, ctr.z + (p.getZ(idx) - ctr.z) * k);
+      }
+    }
+    this.vmRod.geometry.dispose();
+    this.vmRod.geometry = g;
+    this.vmTip.position.copy(tip);
+    // 손이 릴을 감는다
+    if (fi.pressed) this.crankAngle += dt * (fi.running ? 9 : 16);
+    this.vmCrank.rotation.x = this.crankAngle;
+    // 낚싯줄: 초리 끝 → 물고기
+    if (this.fpTarget) {
+      vm.updateMatrixWorld(true);
+      const tw = this.vmTip.getWorldPosition(new THREE.Vector3());
+      this.setLine(tw, this.fpTarget, (1 - fi.tension) * 1.5);
+    }
   }
 
   // ── 함께 있는 사람들 ──
@@ -1858,6 +2202,10 @@ export class World {
   // ── 걷기: 서 있을 수 있는 높이와 충돌 ──
   surfaceAt(X, Z) {
     let y = heightAt(X, Z), kind = 'ground';
+    if (MODE.sihwa) {
+      if (X >= DIKE.x0 && X <= DIKE.x1 && Math.abs(Z) <= DIKE.half) return { y: DIKE.top, kind: 'concrete' };
+      return { y, kind: 'ground' };
+    }
     const dy = deckY(X);
     if (dy != null && Z >= DECK_Z0 && Z <= DECK_Z1 && dy > y - 0.4) { y = dy; kind = 'wood'; }
     if (X >= PIER_X - 0.5 && X <= PIER_X + PIER_LEN && Z >= -5.4 && Z <= 5) { y = PIER_TOP; kind = 'concrete'; }
@@ -1874,7 +2222,11 @@ export class World {
   }
 
   canStand(from, X, Z, surf) {
-    if (X < -60 || X > PIER_X + PIER_LEN - 1 || Z < -95 || Z > 65) return false;
+    if (MODE.sihwa) {
+      // 방조제 위만 걸을 수 있다 (양쪽 난간)
+      return X >= DIKE.x0 + 1 && X <= DIKE.x1 - 1 && Math.abs(Z) <= DIKE.half - 0.8 && surf.kind === 'concrete';
+    }
+    if (X < 40 || X > PIER_X + PIER_LEN - 1 || Z < -95 || Z > 65) return false;
     for (const c of this.colliders) {
       const dx = X - c.X, dz = Z - c.Z;
       if (dx * dx + dz * dz < c.r * c.r) return false;
@@ -1882,7 +2234,7 @@ export class World {
     if (surf.kind === 'concrete' && Z < -4.7) return false; // 방파제 난간
     if (from.kind === 'wood' && surf.kind !== 'wood' && Z < DECK_Z0 + 0.3) return false; // 데크 난간
     if (from.kind === 'wood' && surf.kind === 'wood' && Z < DECK_Z0 + 0.3) return false;
-    if (surf.kind === 'ground' && surf.y < -0.55) return false; // 깊은 물
+    if (surf.kind === 'ground' && surf.y < (this.wade ?? -0.3)) return false; // 복장에 따라 물에 들어갈 수 있는 깊이
     const rise = surf.y - from.y;
     const limit = surf.kind === 'rock' ? 0.55 : surf.kind === 'concrete' || surf.kind === 'wood' ? 0.6 : 0.32;
     if (rise > limit) return false; // 절벽·너무 높은 턱
@@ -1890,8 +2242,9 @@ export class World {
   }
 
   placeAt(av, xpx, zPref) {
-    const X = clamp(xpx * M, -50, PIER_X + PIER_LEN - 3);
+    const X = MODE.sihwa ? clamp(xpx * M, DIKE.x0 + 2, DIKE.x1 - 2) : clamp(xpx * M, 50, PIER_X + PIER_LEN - 3);
     let Z = zPref;
+    if (MODE.sihwa) Z = Z == null ? -4.5 : clamp(Z, -DIKE.half + 1, DIKE.half - 1);
     if (Z == null) {
       if (X < 120) Z = 0;
       else if (X > PIER_X) Z = -1.5;

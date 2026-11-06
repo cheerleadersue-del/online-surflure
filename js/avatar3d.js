@@ -45,7 +45,15 @@ export class Avatar {
       root.add(p);
       add(p, new THREE.CapsuleGeometry(0.06, 0.1, 6, 12), look.pants === 'shorts' ? skin : pants, 0, -0.11, 0);
       if (look.pants === 'shorts') add(p, new THREE.CapsuleGeometry(0.068, 0.04, 6, 12), pants, 0, -0.02, 0);
-      add(p, sph(0.075), boot, 0, -0.22, 0.025, 1, 0.75, 1.35);
+      if (look.shoes === 'slipper') {
+        // 맨발 + 슬리퍼
+        add(p, sph(0.06), skin, 0, -0.21, 0.025, 1, 0.7, 1.3);
+        add(p, new THREE.BoxGeometry(0.11, 0.025, 0.2), toy('#2f80ed', 0.6), 0, -0.255, 0.03);
+      } else if (look.shoes === 'knee') {
+        // 무릎 장화
+        add(p, new THREE.CapsuleGeometry(0.068, 0.12, 6, 12), boot, 0, -0.15, 0);
+        add(p, sph(0.075), boot, 0, -0.22, 0.025, 1, 0.75, 1.35);
+      } else add(p, sph(0.075), boot, 0, -0.22, 0.025, 1, 0.75, 1.35);
       return p;
     });
     // 몸통 (동그란 콩 모양)
@@ -116,13 +124,14 @@ export class Avatar {
     }
 
     // 낚싯대 (오른손)
-    const rodM = new THREE.MeshPhysicalMaterial({ color: '#1a1d22', roughness: 0.25, clearcoat: 0.8 });
+    const rodC = { bamboo: '#c9a55a', standard: '#1a1c20', premium: '#14306a' }[look.rod] || '#1a1d22';
+    const rodM = new THREE.MeshPhysicalMaterial({ color: rodC, roughness: 0.25, clearcoat: 0.8 });
     this.rod = new THREE.Group();
     this.rod.position.set(0.25, 0.44, 0.12);
     root.add(this.rod);
     add(this.rod, new THREE.CylinderGeometry(0.01, 0.017, 1.4, 8), rodM, 0, 0.45, 0);
     add(this.rod, new THREE.CylinderGeometry(0.022, 0.022, 0.25, 10), toy('#3a2a20', 0.8), 0, 0.05, 0);
-    const reel = add(this.rod, new THREE.CylinderGeometry(0.045, 0.045, 0.05, 16), toy('#b9c2cc', 0.25), 0.05, 0.22, 0);
+    const reel = add(this.rod, new THREE.CylinderGeometry(0.045, 0.045, 0.05, 16), toy({ basic: '#8f979f', ultegra: '#cfd6dc', stella: '#d9c27a', vanquish: '#3b4f7a' }[look.reel] || '#b9c2cc', 0.25), 0.05, 0.22, 0);
     reel.rotation.z = Math.PI / 2;
     this.rodTipSeg = new THREE.Group();
     this.rodTipSeg.position.y = 1.15;

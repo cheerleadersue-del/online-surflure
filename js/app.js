@@ -1,7 +1,10 @@
 import {
-  LINES, ZONES, WORLD_END, BOAT_DOCK, METHODS, AVATAR_OPTIONS, NAME_IDEAS, DEFAULT_AVATAR,
-  SPECIES_SUGGEST, timeSlot, estWaterTemp, zoneAt,
+  LINES, WORLD_START, WORLD_END, BOAT_DOCK, METHODS, DEFAULT_AVATAR,
+  SPECIES_SUGGEST, timeSlot, estWaterTemp, zoneAt, setZonesFor,
+  POINTS, POINT_TYPE_NAME, findPoint, GEAR, gearOf, DEFAULT_GEAR,
 } from './data.js';
+import * as DATA from './data.js';
+import { Records } from './records.js';
 import { smooth, hashStr } from './scene.js';
 import { World } from './scene3d.js';
 import { AvatarPreview } from './avatar3d.js';
@@ -37,7 +40,9 @@ const profile = load('surflure.profile', {});
 const params = new URLSearchParams(location.search);
 const st = {
   line: LINES[params.get('line')] ? params.get('line') : profile.line || null,
-  look: { ...DEFAULT_AVATAR, ...(profile.look || {}) },
+  point: findPoint(params.get('point') || profile.point || ''),
+  gear: { ...DEFAULT_GEAR, ...(profile.gear || {}) },
+  look: { ...DEFAULT_AVATAR, name: (profile.look && profile.look.name) || '' },
   avatar: { x: 3500, dir: 1, walking: false, phase: 0 },
   camX: 3500,
   flags: [],
@@ -62,6 +67,7 @@ const fishing = new Fishing(audio, {
   onFightEnd: (ok) => onFightEnd(ok),
 });
 st.fishing = fishing;
+const records = new Records();
 
 st.npcs = [
   { x: 5800, seed: 3, name: '몽돌꾼', look: { ...DEFAULT_AVATAR, jacket: '#2aa198', hat: 'none', pants: 'shorts', pantsColor: '#3a4a63', vest: false } },
@@ -70,54 +76,95 @@ st.npcs = [
   { x: 9800, seed: 7, name: '방파제꾼', look: { ...DEFAULT_AVATAR, jacket: '#f2c230', hat: 'beanie', hatColor: '#c8262d', pants: 'jogger', vest: true } },
 ];
 
-// ── 입장 화면 ──
+// ── 입장 화면: 아이디 → 장비 → 라인·포인트 ──
+// 복장 → 아바타 모습
+function applyOutfit() {
+  const o = st.gear.outfit;
+  st.look.pants = o === 'wader' ? 'wader' : o === 'boots' ? 'jogger' : 'shorts';
+  st.look.shoes = o === 'basic' ? 'slipper' : o === 'boots' ? 'knee' : 'wader';
+  st.look.pantsColor = o === 'wader' ? '#4b5136' : o === 'boots' ? '#3a4a63' : '#4f7fb8';
+  st.look.jacket = o === 'basic' ? '#f2f2ee' : '#f26b1d';
+  st.look.vest = o !== 'basic';
+  st.look.hat = 'cap';
+  st.look.hatColor = '#1f3b73';
+  st.look.rod = st.gear.rod;
+  st.look.reel = st.gear.reel;
+}
 function buildEntry() {
+  applyOutfit();
+  const gearSeg = (kind) => {
+    const box = $(`#g-${kind}`);
+    GEAR[kind].forEach((g) => box.append(el('button', {
+      type: 'button', class: st.gear[kind] === g.id ? 'on' : '',
+      onclick: (e) => {
+        st.gear[kind] = g.id; applyOutfit(); audio.ui();
+        [...box.children].forEach((c) => c.classList.toggle('on', c === e.currentTarget));
+      },
+    }, el('b', { text: g.name }), el('small', { text: g.tag }))));
+  };
+  ['rod', 'reel', 'bait', 'outfit'].forEach(gearSeg);
   document.querySelectorAll('.line-card').forEach((b) => {
     b.classList.toggle('on', b.dataset.line === st.line);
     b.addEventListener('click', () => {
       st.line = b.dataset.line;
+      if (!st.point || !POINTS[st.line].includes(st.point)) st.point = st.line === 'west' ? POINTS.west[0] : null;
       document.querySelectorAll('.line-card').forEach((x) => x.classList.toggle('on', x === b));
       audio.ui();
+      renderPoints();
       validateEntry();
     });
   });
   const nameIn = $('#av-name');
   nameIn.value = st.look.name || '';
-  nameIn.addEventListener('input', () => { st.look.name = nameIn.value.trim(); validateEntry(); });
-  NAME_IDEAS.forEach((n) => $('#name-ideas').append(el('button', {
-    type: 'button', text: n,
-    onclick: () => { nameIn.value = n; st.look.name = n; validateEntry(); },
-  })));
-  const seg = (id, opts, key) => {
-    const box = $(id);
-    opts.forEach(([v, label]) => box.append(el('button', {
-      type: 'button', text: label, class: st.look[key] === v ? 'on' : '',
-      onclick: (e) => { st.look[key] = v; [...box.children].forEach((c) => c.classList.toggle('on', c === e.currentTarget)); },
-    })));
-  };
-  const sw = (id, colors, key) => {
-    const box = $(id);
-    colors.forEach((c) => box.append(el('button', {
-      type: 'button', style: `background:${c}`, class: st.look[key] === c ? 'on' : '', 'aria-label': c,
-      onclick: (e) => { st.look[key] = c; [...box.children].forEach((x) => x.classList.toggle('on', x === e.currentTarget)); },
-    })));
-  };
-  seg('#opt-hat', AVATAR_OPTIONS.hat, 'hat');
-  sw('#opt-hatColor', AVATAR_OPTIONS.colors, 'hatColor');
-  sw('#opt-jacket', AVATAR_OPTIONS.colors, 'jacket');
-  seg('#opt-pants', AVATAR_OPTIONS.pants, 'pants');
-  sw('#opt-pantsColor', AVATAR_OPTIONS.pantsColors, 'pantsColor');
-  $('#opt-vest').checked = st.look.vest;
-  $('#opt-vest').addEventListener('change', (e) => { st.look.vest = e.target.checked; });
-  $('#enter-btn').addEventListener('click', enterSea);
+  nameIn.addEventListener('input', () => { st.look.name = nameIn.value.trim(); $('#id-msg').textContent = ''; $('#id-msg').className = 'id-msg'; validateEntry(); });
+  $('#enter-btn').addEventListener('click', tryEnter);
+  renderPoints();
   validateEntry();
 }
-
+function renderPoints() {
+  const box = $('#point-list');
+  box.textContent = '';
+  if (!st.line) return;
+  const list = POINTS[st.line];
+  ['beach', 'breakwater', 'port', 'dike'].forEach((type) => {
+    const items = list.filter((p) => p.type === type);
+    if (!items.length) return;
+    box.append(el('h3', { text: POINT_TYPE_NAME[type] }));
+    const grid = el('div', { class: 'point-grid' });
+    items.forEach((p) => grid.append(el('button', {
+      type: 'button', class: st.point === p ? 'on' : '',
+      onclick: (e) => {
+        st.point = p; audio.ui();
+        box.querySelectorAll('.point-grid button').forEach((c) => c.classList.toggle('on', c === e.currentTarget));
+        validateEntry();
+      },
+    }, el('b', { text: p.name }), el('small', { text: p.desc }))));
+    box.append(grid);
+  });
+}
 function validateEntry() {
-  const ok = !!st.line && !!(st.look.name || '').trim();
+  const name = (st.look.name || '').trim();
+  const ok = name.length >= 2 && !!st.line && !!st.point;
   const b = $('#enter-btn');
   b.disabled = !ok;
-  b.textContent = !st.line ? '바다(라인)를 선택하세요' : !st.look.name ? '아이디를 입력하세요' : `${LINES[st.line].name}로 입장하기 🌊`;
+  b.textContent = name.length < 2 ? '아이디를 입력하세요 (2자 이상)' : !st.line ? '라인을 선택하세요' : !st.point ? '포인트를 선택하세요' : `${st.point.name} 진입 🌊`;
+}
+async function tryEnter() {
+  const b = $('#enter-btn');
+  const msg = $('#id-msg');
+  b.disabled = true;
+  b.textContent = '아이디 확인 중…';
+  const r = await records.claim(st.look.name);
+  if (!r.ok) {
+    msg.textContent = r.reason;
+    msg.className = 'id-msg bad';
+    $('#av-name').focus();
+    validateEntry();
+    return;
+  }
+  msg.textContent = r.local ? '✓ 사용할 수 있어요 (서버 미연결: 이 기기에서만 확인)' : '✓ 사용할 수 있는 아이디예요';
+  msg.className = 'id-msg ok';
+  enterSea();
 }
 
 function drawPreview(t) {
@@ -129,25 +176,43 @@ function drawPreview(t) {
 function enterSea() {
   audio.start();
   audio.setMuted(false);
-  save('surflure.profile', { line: st.line, look: st.look });
+  save('surflure.profile', { line: st.line, point: st.point.id, gear: st.gear, look: { name: st.look.name } });
+  setZonesFor(st.point);
+  fishing.gear = { rod: gearOf('rod', st.gear.rod), reel: gearOf('reel', st.gear.reel), bait: gearOf('bait', st.gear.bait), outfit: gearOf('outfit', st.gear.outfit) };
+  scene.setPoint(st.point, st.line);
+  scene.setGearLook(st.gear);
+  scene.wade = fishing.gear.outfit.wade;
   fade(() => {
     $('#entry').hidden = true;
     $('#hud').hidden = false;
     st.hideAvatar = false;
     st.playing = true;
     st.onBoat = false;
-    st.avatar.yaw = Math.PI / 2;
-    teleport(140, 0);
+    st.avatar.yaw = Math.PI;
+    st.avatar.wade = fishing.gear.outfit.wade;
+    const sp = scene.spawn();
+    teleport(sp.x, sp.z);
     scene.viewPreset('normal');
-    scene.orbit.yaw = scene.orbit.tYaw = -0.9;
-    zone = null;
+    scene.orbit.yaw = scene.orbit.tYaw = sp.yaw;
+    // 입장 연출: 멀리서 포인트 전경 → 3.5초 뒤 내 낚시꾼 곁으로
+    scene.orbit.dist = scene.orbit.tDist = 60;
+    scene.orbit.pitch = scene.orbit.tPitch = 0.2;
+    setTimeout(() => { if (st.playing && scene.orbit.tDist === 60) { scene.orbit.tDist = 9; scene.orbit.tPitch = 0.3; } }, 3500);
+    zone = zoneAt(st.avatar.x);
+    $('#hud-zone').textContent = zone.name;
+    updatePanel();
+    $('#walk-hint').hidden = false;
+    setTimeout(() => { $('#walk-hint').hidden = true; }, 9000);
     fishing.reset();
-    $('#hud-line').textContent = LINES[st.line].name;
-    rebuildFlags();
+    $('#hud-line').textContent = `${LINES[st.line].name} · ${POINT_TYPE_NAME[st.point.type]}`;
+    $('#rank-point').textContent = st.point.name;
+    showBanner(st.point.name, st.point.desc);
+    st.flags = [];
     buildMinimap();
-    history.replaceState(null, '', `?line=${st.line}`);
-    net.connect(st.line, { name: st.look.name, look: st.look });
-    chatLog(`${LINES[st.line].name}에 입장했어요. 💬 소통 버튼으로 인사해 보세요!`, 'sys');
+    refreshRank();
+    history.replaceState(null, '', `?line=${st.line}&point=${st.point.id}`);
+    net.connect(st.point.id, { name: st.look.name, look: st.look });
+    chatLog(`${st.point.name}에 도착했어요. 💬 채팅으로 인사해 보세요!`, 'sys');
   });
 }
 
@@ -186,46 +251,27 @@ function allItems() {
   return [...real, ...samples];
 }
 
-const DEPTHS = [0.18, 0.78, 0.4, 0.96, 0.62, 0.28, 0.88];
-function rebuildFlags() {
-  const items = allItems().filter((r) => r.line === st.line).slice(0, 40);
-  const now = Date.now();
-  const prev = new Map(st.flags.map((f) => [f.report.id, f]));
-  st.flags = items.map((r, i) => {
-    const jitter = (hashStr(r.id) % 60) - 30;
-    const f = {
-      report: r,
-      x: 3050 + ((i * 173) % 2150) + jitter,
-      depth: DEPTHS[i % DEPTHS.length],
-      isNew: !r.sample && now - new Date(r.createdAt).getTime() < 86400000,
-      plantedAt: prev.get(r.id)?.plantedAt,
-    };
-    if (knownIds && !knownIds.has(r.id)) f.plantedAt = performance.now();
-    return f;
-  });
-  knownIds = new Set(allItems().map((r) => r.id));
-  buildMinimap();
-}
+// 해변의 인증 사진·깃발은 표시하지 않는다 (인증글은 게시판에서)
 
 // ── 미니맵 ──
 function buildMinimap() {
   const mm = $('#minimap');
   mm.textContent = '';
-  ZONES.forEach((z) => mm.append(el('div', {
-    class: `seg-z z-${z.id}`, style: `width:${((z.to - z.from) / WORLD_END) * 100}%`, text: z.name,
+  const span = WORLD_END - WORLD_START;
+  DATA.ZONES.forEach((z) => mm.append(el('div', {
+    class: `seg-z z-${z.id}`, style: `width:${((z.to - z.from) / span) * 100}%`, text: z.name,
   })));
-  st.flags.forEach((f) => mm.append(el('i', { class: 'fl', style: `left:${(f.x / WORLD_END) * 100}%` })));
   mm.append(el('i', { class: 'me', id: 'mm-me' }));
 }
 $('#minimap').addEventListener('click', (e) => {
   if (fishing.busy && fishing.state !== 'result') return toast('낚시 중이에요. 먼저 채비를 회수하세요.');
   const r = e.currentTarget.getBoundingClientRect();
-  const x = ((e.clientX - r.left) / r.width) * WORLD_END;
+  const x = WORLD_START + ((e.clientX - r.left) / r.width) * (WORLD_END - WORLD_START);
   fade(() => {
     st.onBoat = false;
     fishing.reset();
     scene.clearCatch();
-    teleport(Math.max(60, Math.min(WORLD_END - 60, x)));
+    teleport(Math.max(WORLD_START + 60, Math.min(WORLD_END - 60, x)));
   }, 350);
 });
 
@@ -378,6 +424,7 @@ let pendingCatch = null;
 function showCatch(f) {
   pendingCatch = f;
   net.sendEvent('land', { fish: f.name, size: f.size });
+  submitRecord(f);
   const av = st.avatar;
   scene.showCatch(f, st.onBoat ? scene.boat.position.x : av.X, st.onBoat ? 1.2 : av.Y, st.onBoat ? scene.boat.position.z + 1.5 : av.Z);
   setTimeout(() => openCatchDialog(f), 2600);
@@ -581,27 +628,17 @@ $('#write-form').addEventListener('submit', async (e) => {
   if (!data.spot || !data.species) { W('err').textContent = '장소와 어종은 꼭 입력해주세요.'; return; }
   const btn = W('submit');
   btn.disabled = true;
-  btn.textContent = '깃발 꽂는 중…';
+  btn.textContent = '등록 중…';
   try {
     const item = await store.add({ ...data, photo: photoData });
     $('#dlg-write').close();
     audio.flag();
-    if (st.playing && item.line === st.line) {
-      rebuildFlags();
-      const f = st.flags.find((x) => x.report.id === item.id);
-      if (f) {
-        f.plantedAt = performance.now();
-        fade(() => { st.onBoat = false; fishing.reset(); st.avatar.x = f.x - 120; st.camX = st.avatar.x; scene.snapCam = true; }, 350);
-      }
-      toast('🚩 해변에 인증 깃발이 꽂혔어요!');
-    } else {
-      toast(`🚩 ${LINES[item.line].name} 해변에 깃발이 꽂혔어요!`);
-    }
+    toast('📸 조과 인증이 등록됐어요! 📋 조과 게시판에서 볼 수 있어요.');
   } catch (err) {
     W('err').textContent = err.message;
   } finally {
     btn.disabled = false;
-    btn.textContent = '🚩 깃발 꽂기 (등록)';
+    btn.textContent = '📸 인증 등록';
   }
 });
 $('#btn-write').addEventListener('click', () => openWrite());
@@ -734,7 +771,7 @@ function frame(now) {
       $('#hud-time').textContent = `${timeSlot(date)} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
       $('#hud-temp').textContent = `수온(추정) ${estWaterTemp(st.line, date)}°C`;
       const me = $('#mm-me');
-      if (me) me.style.left = `${(av.x / WORLD_END) * 100}%`;
+      if (me) me.style.left = `${((av.x - WORLD_START) / (WORLD_END - WORLD_START)) * 100}%`;
     }
   } else {
     // 입장 화면 뒤: 해변을 천천히 흘러가는 풍경
@@ -748,10 +785,9 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// ── 함께 낚시: 여러 명 동시 접속 · 동작 · 멘트 · 채팅 ──
-let voiceOn = true;
+// ── 함께 낚시: 같은 포인트 동시 접속 · 채팅 · 랭킹 ──
 function speak(text, { pitch = 1.15, rate = 1.05 } = {}) {
-  if (!voiceOn || !('speechSynthesis' in window)) return;
+  if (!('speechSynthesis' in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ko-KR'; u.pitch = pitch; u.rate = rate; u.volume = 0.9;
@@ -762,12 +798,6 @@ function speak(text, { pitch = 1.15, rate = 1.05 } = {}) {
 }
 function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (_) { /* 미지원 */ } }
 
-const TALK = [
-  ['인사', ['안녕하세요~ 반갑습니다!', '조황 어때요?', '오늘 물때 좋네요~']],
-  ['양해', ['사장님~ 옆에서 피해 안 가게 던져도 되나요?', '옆자리 실례 좀 하겠습니다~', '줄 엉키면 바로 말씀해 주세요!', '뒤로 잠깐 지나갈게요~']],
-  ['매너', ['먼저 오셨으니 편하게 하세요~', '캐스팅 방향 조심할게요!', '쓰레기는 꼭 챙겨 갈게요', '채비·바늘 정리 잘 할게요', '고생하셨습니다~ 대박 나세요!']],
-  ['응답', ['네~ 편하게 하세요!', '그럼요, 같이 잡아요!', '감사합니다~', '나이스~!']],
-];
 const net = new Net({
   onPeer: (p, isNew) => { if (isNew) chatLog(`${p.name}님이 들어왔어요 👋`, 'sys'); updatePeople(); },
   onLeave: (p) => { chatLog(`${p.name}님이 나갔어요`, 'sys'); updatePeople(); },
@@ -776,106 +806,51 @@ const net = new Net({
 });
 function updatePeople() {
   const n = net.peers.size + 1;
-  const el2 = $('#hud-people');
-  el2.textContent = `👥 ${n}명`;
-  el2.title = net.mode === 'online' ? '실시간 접속 중' : net.mode === 'local' ? '이 브라우저의 다른 탭과만 연결됨' : '연결 안 됨';
-  el2.classList.toggle('cloud', net.mode === 'online');
+  const e = $('#hud-people');
+  e.textContent = `👥 ${n}명`;
+  e.title = net.mode === 'online' ? '실시간 접속 중' : net.mode === 'local' ? '이 브라우저의 다른 탭과만 연결됨' : '연결 안 됨';
+  e.classList.toggle('cloud', net.mode === 'online');
 }
+// 채팅 줄: 최근 4줄만, 8초 뒤 흐려진다 (화면을 가리지 않게)
 function chatLog(text, cls = '', who = '') {
-  const ul = $('#chat-log');
+  const ul = $('#chat-feed');
   const li = el('li', { class: cls });
   if (who) li.append(el('b', { text: who }));
   li.append(document.createTextNode(text));
   ul.append(li);
-  while (ul.children.length > 60) ul.firstChild.remove();
-  ul.scrollTop = ul.scrollHeight;
+  while (ul.children.length > 4) ul.firstChild.remove();
+  setTimeout(() => li.classList.add('old'), 8000);
+  setTimeout(() => li.remove(), 8800);
 }
 function distTo(pos) {
   const av = st.avatar;
   return pos ? Math.hypot(pos.x - av.X, pos.z - av.Z) : Infinity;
 }
-// 말하기: 내 말풍선 + 모두에게 + 음성
-function sayLine(text, { voice = true, kind = 'say' } = {}) {
+function sendChat(text) {
   scene.sayPlayer(text);
-  net.sendEvent(kind, { text });
-  chatLog(text, 'me', `${st.look.name || '나'}: `);
-  if (voice && kind === 'say') speak(text);
-}
-
-let myHighfive = 0;
-function doAction(a) {
-  if (!st.playing) return;
-  if (fishing.busy && fishing.state !== 'result') return toast('낚시 중에는 할 수 없어요.');
-  audio.ui();
-  st.avatar.target = null;
-  const start = (name, dur) => { scene.playerAction(name, dur); scene.playerAct.wall = Date.now(); };
-  if (a === 'bow') { start('bow', 1.6); sayLine('안녕하세요~'); }
-  else if (a === 'wave') { start('wave', 3); scene.sayPlayer('👋'); net.sendEvent('emote', { text: '👋' }); }
-  else if (a === 'sit') { start('sit', 1e6); }
-  else if (a === 'nice') { sayLine('나이스~!'); audio.clap && audio.clap(); }
-  else if (a === 'highfive') {
-    start('highfive', 1.4);
-    myHighfive = Date.now();
-    net.sendEvent('highfive', {});
-    checkHighfive();
-  } else if (a === 'castle') {
-    const z = zoneAt(st.avatar.x);
-    if (!['beach', 'sandpath'].includes(z.id)) return toast('모래성은 모래 해변에서 쌓을 수 있어요.');
-    start('castle', 3.6);
-    const pos = scene.frontOfPlayer(0.75);
-    const seed = Math.floor(Math.random() * 9999);
-    setTimeout(() => { scene.addCastle(pos.X, pos.Z, seed); net.sendEvent('castle', { X: pos.X, Z: pos.Z, seed }); }, 400);
-  }
-}
-// 가까이(3m) 있는 사람과 4초 안에 같이 누르면 성공
-function checkHighfive() {
-  const now = Date.now();
-  if (now - myHighfive > 4000) return;
-  for (const p of net.peers.values()) {
-    if (p.hf && Math.abs(p.hf - myHighfive) < 4000 && distTo(scene.peerPos(p.id)) < 3.2) { highfiveOK(p.name); p.hf = 0; return; }
-  }
-  // 근처 NPC는 늘 받아준다
-  const npcs = scene.npcs || [];
-  for (let i = 0; i < npcs.length; i++) {
-    const g = npcs[i].a.group.position;
-    if (Math.hypot(g.x - st.avatar.X, g.z - st.avatar.Z) < 3.2) { scene.sayNpc(i, '짝! ✋'); highfiveOK(npcs[i].n.name); return; }
-  }
-}
-function highfiveOK(name) {
-  myHighfive = 0;
-  audio.clap && audio.clap(true);
-  scene.sayPlayer('짝! ✋');
-  vibrate(60);
-  toast(`${name}님과 하이파이브! ✋`);
+  net.sendEvent('chat', { text });
+  chatLog(text, 'me', `${st.look.name || '나'}`);
 }
 
 function onPeerEvent(p, ev) {
   const pos = scene.peerPos(p.id);
-  const near = distTo(pos) < 40;
-  if (ev.type === 'say' || ev.type === 'chat' || ev.type === 'emote') {
+  if (ev.type === 'chat' && ev.text) {
     scene.sayPeer(p.id, ev.text);
-    if (ev.type !== 'emote') chatLog(ev.text, '', `${p.name}: `);
-    if (ev.type === 'say' && near) speak(ev.text, { pitch: 0.95 + (p.id.charCodeAt(0) % 5) * 0.08 });
+    chatLog(ev.text, '', p.name);
   } else if (ev.type === 'hit') {
     scene.sayPeer(p.id, '히트!! 🎣');
-    chatLog(`${p.name}님 히트!`, 'sys');
-    if (near) {
-      // 옆 사람 히트: 나이스~!
+    // 옆 사람 히트: 박수와 나이스~!
+    if (distTo(pos) < 40) {
       audio.clap && audio.clap();
-      setTimeout(() => sayLine('나이스~!'), 500);
-    } else actionToast(`${p.name}님이 히트했어요!`, '👏 나이스', () => sayLine('나이스~!'));
+      setTimeout(() => { scene.sayPlayer('나이스~!'); speak('나이스~!'); }, 500);
+    } else chatLog(`${p.name}님 히트!`, 'sys');
   } else if (ev.type === 'land') {
-    scene.sayPeer(p.id, `${ev.fish || '물고기'} 잡았다! 🎉`);
-    chatLog(`${p.name}님이 ${ev.fish || '물고기'}${ev.size ? ` ${ev.size}cm` : ''} 랜딩!`, 'sys');
-  } else if (ev.type === 'castle') {
-    scene.addCastle(ev.X, ev.Z, ev.seed);
-  } else if (ev.type === 'highfive') {
-    p.hf = Date.now();
-    if (myHighfive && Date.now() - myHighfive < 4000 && distTo(pos) < 3.2) highfiveOK(p.name);
+    scene.sayPeer(p.id, `${ev.fish || '물고기'} ${ev.size || ''}cm! 🎉`);
+    chatLog(`${p.name}님 ${ev.fish || '물고기'}${ev.size ? ` ${ev.size}cm` : ''} 랜딩!`, 'sys');
   }
 }
 
-// NPC도 가끔 입질을 받는다 → 옆이면 나이스~!
+// NPC도 가끔 입질 → 옆이면 나이스~!
 let npcNext = 40 + Math.random() * 40;
 function npcLife(dt) {
   npcNext -= dt;
@@ -890,65 +865,82 @@ function npcLife(dt) {
   }
 }
 
-let toastBtnT = 0;
-function actionToast(msg, label, fn) {
-  const t = $('#toast');
-  t.textContent = msg;
-  const b = el('button', { class: 'nice-btn', type: 'button', text: label, onclick: () => { fn(); t.classList.remove('show', 'actionable'); } });
-  t.append(b);
-  t.classList.add('show', 'actionable');
-  clearTimeout(toastBtnT);
-  toastBtnT = setTimeout(() => t.classList.remove('show', 'actionable'), 4500);
-}
-
-// 히트 → 1인칭 · 진동 · 드랙
+// 히트 → 1인칭(휘어진 낚싯대 · 릴 감는 손) + 진동 + 드랙
 let vibT = 0;
-function onHit(f) {
+function onHit() {
   scene.fpv = true;
-  vibrate([200, 70, 200]);
+  vibrate([220, 60, 220]);
   let fl = $('.hit-flash');
   if (!fl) { fl = el('div', { class: 'hit-flash' }); document.body.append(fl); }
   fl.classList.add('on');
   setTimeout(() => fl.classList.remove('on'), 500);
   net.sendEvent('hit', {});
-  // 근처 NPC가 응원
   (scene.npcs || []).forEach((n, i) => {
     const g = n.a.group.position;
     if (Math.hypot(g.x - st.avatar.X, g.z - st.avatar.Z) < 30) setTimeout(() => { scene.sayNpc(i, '나이스~!'); speak('나이스~!', { pitch: 0.9 }); }, 600 + i * 300);
   });
 }
-function onFight({ running, pressed }) {
-  scene.shake = running ? 1 : pressed ? 0.4 : 0.12;
+function onFight({ running, pressed, tension }) {
+  scene.shake = running ? 1 : pressed ? 0.45 : 0.12;
+  scene.fightInfo = { running, pressed, tension };
   const now = performance.now();
-  if ((running || pressed) && now - vibT > 260) { vibT = now; vibrate(running ? 140 : 45); }
+  if ((running || pressed) && now - vibT > 240) { vibT = now; vibrate(running ? 160 : 70); }
 }
-function onFightEnd(ok) {
+function onFightEnd() {
   if (!scene.fpv) return;
   scene.fpv = false;
   scene.shake = 0;
+  scene.fightInfo = null;
   vibrate(0);
 }
 
-// 소통 패널
-$('#btn-social').addEventListener('click', () => { $('#social-panel').hidden = !$('#social-panel').hidden; audio.ui(); });
-$('#sp-close').addEventListener('click', () => { $('#social-panel').hidden = true; });
-document.querySelectorAll('#sp-tabs button').forEach((b) => b.addEventListener('click', () => {
-  document.querySelectorAll('#sp-tabs button').forEach((x) => x.classList.toggle('on', x === b));
-  document.querySelectorAll('.sp-body').forEach((x) => { x.hidden = x.dataset.tab !== b.dataset.tab; });
-  if (b.dataset.tab === 'chat') setTimeout(() => $('#chat-input').focus(), 50);
-}));
-document.querySelectorAll('.act-grid button').forEach((b) => b.addEventListener('click', () => doAction(b.dataset.act)));
-TALK.forEach(([title, lines]) => {
-  $('#talk-list').append(el('h4', { text: title }));
-  lines.forEach((t) => $('#talk-list').append(el('button', { type: 'button', text: t, onclick: () => sayLine(t) })));
-});
-$('#sp-voice').addEventListener('change', (e) => { voiceOn = e.target.checked; });
-$('#chat-form').addEventListener('submit', (e) => {
+// 포인트 랭킹 1~3위
+async function refreshRank() {
+  if (!st.point) return;
+  const top = await records.top3(st.point.id);
+  const ol = $('#rank-list');
+  ol.textContent = '';
+  if (!top.length) { ol.append(el('li', { class: 'empty', text: '아직 기록이 없어요. 첫 기록의 주인공이 되어보세요!' })); return; }
+  const medal = ['🥇', '🥈', '🥉'];
+  top.forEach((r, i) => ol.append(el('li', { class: r.name === st.look.name ? 'me' : '' },
+    el('span', { class: 'm', text: medal[i] }), el('span', { text: `${r.name} · ${r.species} ${Math.round(r.size * 10) / 10}cm` }))));
+  return top;
+}
+records.on((point) => { if (st.playing && st.point && (!point || point === st.point.id)) refreshRank(); });
+setInterval(() => { if (st.playing) refreshRank(); }, 30000);
+$('#rank').addEventListener('click', (e) => { const b = e.currentTarget; b.classList.toggle('open'); b.setAttribute('aria-expanded', b.classList.contains('open')); });
+async function submitRecord(f) {
+  if (!st.point) return;
+  const before = await records.top3(st.point.id);
+  await records.submit(st.point.id, st.look.name, f.name, f.size);
+  const top = await refreshRank();
+  const rank = (top || []).findIndex((r) => r.name === st.look.name && r.size === f.size);
+  const wasRank = before.findIndex((r) => r.name === st.look.name);
+  if (rank >= 0 && (wasRank < 0 || rank < wasRank || (before[wasRank] && before[wasRank].size < f.size))) {
+    toast(`🏆 ${st.point.name} 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm`);
+    net.sendEvent('chat', { text: `🏆 랭킹 ${rank + 1}위 달성! ${f.name} ${f.size}cm` });
+  }
+}
+
+// 채팅 입력: 버튼을 누를 때만 위쪽에 한 줄로 열린다
+function openChat(on) {
+  $('#chat-bar').hidden = !on;
+  if (on) setTimeout(() => $('#chat-input').focus(), 30);
+  else $('#chat-input').blur();
+}
+$('#btn-chat').addEventListener('click', () => { audio.ui(); openChat($('#chat-bar').hidden); });
+$('#chat-close').addEventListener('click', () => openChat(false));
+$('#chat-bar').addEventListener('submit', (e) => {
   e.preventDefault();
   const v = $('#chat-input').value.trim().slice(0, 80);
   if (!v) return;
-  sayLine(v, { voice: false, kind: 'chat' });
+  sendChat(v);
   $('#chat-input').value = '';
+  if (matchMedia('(max-width: 760px)').matches) openChat(false);
+});
+addEventListener('keydown', (e) => {
+  if (st.playing && e.key === 'Enter' && $('#chat-bar').hidden && !e.target.closest('input, textarea, select, dialog')) { e.preventDefault(); openChat(true); }
+  if (e.key === 'Escape' && !$('#chat-bar').hidden) openChat(false);
 });
 addEventListener('beforeunload', () => net.leave());
 
@@ -957,8 +949,6 @@ addEventListener('resize', () => scene.resize());
 buildEntry();
 $('#creel-count').textContent = creel.length;
 store.on(() => {
-  if (st.playing) rebuildFlags();
-  else knownIds = new Set(allItems().map((r) => r.id));
   if ($('#dlg-board').open) renderBoard();
   if ($('#dlg-detail').open && detailId) {
     const r = findItem(detailId);

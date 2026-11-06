@@ -23,45 +23,47 @@
       <header class="brand">
         <span class="brand-mark">〰️🎣</span>
         <h1>온라인 서프루어낚시</h1>
-        <p>소나무 숲길을 지나 모래를 밟고, 오늘의 포인트로.</p>
+        <p>장비를 챙기고, 오늘의 포인트로.</p>
       </header>
 
-      <div class="step" id="step-line">
-        <h2><span class="num">1</span> 어느 바다로 갈까요?</h2>
-        <div class="line-cards">
-          <button class="line-card east" data-line="east" type="button">
-            <strong>동해라인</strong>
-            <span>맑고 깊은 물 · 일출 · 광어·삼치·황어</span>
-          </button>
-          <button class="line-card west" data-line="west" type="button">
-            <strong>서해라인</strong>
-            <span>넓은 백사장 · 노을 · 광어·농어·우럭</span>
-          </button>
+      <div class="step">
+        <h2><span class="num">1</span> 아이디</h2>
+        <div class="id-row">
+          <input id="av-name" maxlength="12" placeholder="2~12자, 다른 사람과 겹칠 수 없어요" autocomplete="nickname">
+          <span id="id-msg" class="id-msg" role="status"></span>
         </div>
       </div>
 
-      <div class="step" id="step-avatar">
-        <h2><span class="num">2</span> 나의 낚시꾼</h2>
+      <div class="step">
+        <h2><span class="num">2</span> 장비 세팅</h2>
         <div class="avatar-grid">
           <canvas id="avatar-preview" width="200" height="240" aria-label="아바타 미리보기"></canvas>
-          <div class="avatar-opts">
-            <label class="field">
-              <span>아이디</span>
-              <input id="av-name" maxlength="12" placeholder="직접 입력하거나 아래에서 고르세요" autocomplete="nickname">
-            </label>
-            <div class="chips" id="name-ideas"></div>
-            <div class="opt-row"><span>모자</span><div class="seg" id="opt-hat"></div></div>
-            <div class="opt-row"><span>모자색</span><div class="swatches" id="opt-hatColor"></div></div>
-            <div class="opt-row"><span>재킷</span><div class="swatches" id="opt-jacket"></div></div>
-            <div class="opt-row"><span>하의</span><div class="seg" id="opt-pants"></div></div>
-            <div class="opt-row"><span>하의색</span><div class="swatches" id="opt-pantsColor"></div></div>
-            <label class="opt-row check"><input type="checkbox" id="opt-vest" checked> <span>구명조끼 착용</span></label>
+          <div class="gear-opts">
+            <div class="gear-row"><span>🎣 낚싯대</span><div class="gear-seg" id="g-rod"></div></div>
+            <div class="gear-row"><span>⚙️ 릴</span><div class="gear-seg" id="g-reel"></div></div>
+            <div class="gear-row"><span>🪝 미끼</span><div class="gear-seg" id="g-bait"></div></div>
+            <div class="gear-row"><span>👕 복장</span><div class="gear-seg" id="g-outfit"></div></div>
           </div>
         </div>
       </div>
 
-      <button id="enter-btn" class="btn-primary big" type="button" disabled>바다로 입장하기 🌊</button>
-      <p class="fine">🔊 소리를 켜면 숲의 바람, 모래 밟는 소리, 파도 소리가 들려요. (이어폰 추천)</p>
+      <div class="step">
+        <h2><span class="num">3</span> 포인트 선택</h2>
+        <div class="line-cards">
+          <button class="line-card east" data-line="east" type="button">
+            <strong>동해라인</strong>
+            <span>해수욕장 · 방파제 · 항구 15곳</span>
+          </button>
+          <button class="line-card west" data-line="west" type="button">
+            <strong>서해라인</strong>
+            <span>시화방조제</span>
+          </button>
+        </div>
+        <div class="point-list" id="point-list"></div>
+      </div>
+
+      <button id="enter-btn" class="btn-primary big" type="button" disabled>포인트 진입 🌊</button>
+      <p class="fine">🔊 이어폰을 끼면 파도 소리와 드랙 소리가 더 실감 나요.</p>
     </div>
   </section>
 
@@ -76,6 +78,10 @@
         <span id="hud-store" class="pill">로컬</span>
         <span id="hud-people" class="pill" title="지금 함께 있는 낚시꾼">👥 1명</span>
       </div>
+      <button class="rank" id="rank" type="button" aria-expanded="false">
+        <span class="rank-title">🏆 <b id="rank-point">포인트</b> 최대어</span>
+        <ol id="rank-list"><li class="empty">아직 기록이 없어요. 첫 기록의 주인공이 되어보세요!</li></ol>
+      </button>
       <select id="time-mode" aria-label="시간대">
         <option value="real">🕒 실제 시간</option>
         <option value="5.8">🌅 새벽</option>
@@ -89,7 +95,7 @@
     <nav class="hud-actions">
       <button id="btn-write" class="btn-primary" type="button">📸 조과 인증하기</button>
       <button id="btn-board" type="button">📋 조과 게시판</button>
-      <button id="btn-social" type="button">💬 소통</button>
+      <button id="btn-chat" type="button">💬 채팅</button>
       <button id="btn-creel" type="button">🐟 내 어망 <b id="creel-count">0</b></button>
       <button id="btn-sound" type="button" aria-pressed="true">🔊</button>
       <button id="btn-home" type="button" title="처음으로">🏠</button>
@@ -109,38 +115,12 @@
     </div>
     <p class="walk-hint" id="walk-hint">가고 싶은 곳을 터치하면 걸어가요 · 드래그로 둘러보기 · 두 손가락/휠로 확대</p>
 
-    <div class="social-panel" id="social-panel" hidden>
-      <div class="sp-head">
-        <div class="seg sp-tabs" id="sp-tabs">
-          <button data-tab="act" class="on" type="button">동작</button>
-          <button data-tab="talk" type="button">멘트</button>
-          <button data-tab="chat" type="button">채팅</button>
-        </div>
-        <label class="sp-voice"><input type="checkbox" id="sp-voice" checked> 🗣️ 음성</label>
-        <button class="sp-close" id="sp-close" type="button" aria-label="닫기">✕</button>
-      </div>
-      <div class="sp-body" data-tab="act">
-        <div class="act-grid">
-          <button data-act="bow" type="button">🙇 인사</button>
-          <button data-act="wave" type="button">👋 손흔들기</button>
-          <button data-act="sit" type="button">🪑 앉기</button>
-          <button data-act="highfive" type="button">✋ 하이파이브</button>
-          <button data-act="castle" type="button">🏰 모래성 쌓기</button>
-          <button data-act="nice" type="button">👏 나이스!</button>
-        </div>
-        <p class="sp-tip">하이파이브는 가까이(2~3걸음) 있는 사람과 같이 누르면 “짝!”</p>
-      </div>
-      <div class="sp-body" data-tab="talk" hidden>
-        <div class="talk-list" id="talk-list"></div>
-      </div>
-      <div class="sp-body" data-tab="chat" hidden>
-        <ul class="chat-log" id="chat-log"></ul>
-        <form class="chat-form" id="chat-form">
-          <input id="chat-input" maxlength="80" placeholder="메시지를 입력하세요 (80자)" autocomplete="off">
-          <button class="btn-primary">보내기</button>
-        </form>
-      </div>
-    </div>
+    <ul class="chat-feed" id="chat-feed" aria-live="polite"></ul>
+    <form class="chat-bar" id="chat-bar" hidden>
+      <input id="chat-input" maxlength="80" placeholder="메시지 (80자)" autocomplete="off" enterkeyhint="send">
+      <button class="btn-primary" type="submit">보내기</button>
+      <button type="button" id="chat-close" aria-label="채팅 닫기">✕</button>
+    </form>
 
     <div class="fish-panel" id="fish-panel" hidden>
       <div class="method-tabs" id="method-tabs">
@@ -192,7 +172,7 @@
   <dialog id="dlg-write" class="dlg wide">
     <form method="dialog" class="dlg-close"><button aria-label="닫기">✕</button></form>
     <h2 class="dlg-title">📸 실제 조과 인증하기</h2>
-    <p class="dlg-sub">실제 바다에서 잡은 물고기를 사진으로 인증하세요. 등록하면 해변에 깃발이 꽂혀요.</p>
+    <p class="dlg-sub">실제 바다에서 잡은 물고기를 사진으로 인증하세요. 등록하면 조과 게시판에 올라가요.</p>
     <div class="write-grid">
       <form id="write-form" class="write-form">
         <label class="photo-drop" id="photo-drop">
@@ -210,7 +190,7 @@
           <label class="field"><span>어종 *</span><input id="w-species" list="species-list" maxlength="30" required placeholder="예) 광어"><datalist id="species-list"></datalist></label>
         </fieldset>
         <p class="form-err" id="w-err" role="alert"></p>
-        <button class="btn-primary big" id="w-submit">🚩 깃발 꽂기 (등록)</button>
+        <button class="btn-primary big" id="w-submit">📸 인증 등록</button>
       </form>
       <aside class="live-preview">
         <h3>실시간 미리보기</h3>
