@@ -293,6 +293,107 @@ export class Landmarks {
     this.scene.add(g);
     this.lighthouse(x + 10, z + 40, '#f4f2ec');
   }
+
+  // ── 강을 건너는 다리 ── type: girder · freedom · old · arch · cable · low
+  bridge(type, X, z0, z1, color = '#f4f4f0') {
+    const g = new THREE.Group();
+    const conc = std('#cfcbc2', { map: this.assets ? this.assets.tex.concrete.map : null, roughness: 0.9 });
+    const len = z0 - z1, cz = (z0 + z1) / 2;
+    const deckY = type === 'low' ? 0.7 : type === 'old' ? 4 : type === 'freedom' ? 3 : 10;
+    const width = type === 'freedom' ? 3 : type === 'old' || type === 'low' ? 6 : 14;
+    // 상판
+    const deckM = type === 'freedom' ? std('#8a6a48') : conc;
+    this.mesh(new THREE.BoxGeometry(width, type === 'low' ? 0.6 : 1.4, len), deckM, 0, deckY, cz, g);
+    // 교각
+    const span = type === 'girder' ? 22 : type === 'old' || type === 'low' ? 7 : type === 'freedom' ? 9 : 30;
+    for (let z = z0 - span / 2; z > z1; z -= span) {
+      const h = deckY + 4;
+      if (type === 'low') this.mesh(new THREE.BoxGeometry(width, 1.4, 1.2), conc, 0, 0, z, g);
+      else this.mesh(new THREE.BoxGeometry(type === 'freedom' ? 0.5 : width * 0.6, h, type === 'freedom' ? 0.5 : 2.2), type === 'freedom' ? std('#6a5038') : conc, 0, deckY - h / 2, z, g);
+    }
+    // 난간
+    if (type !== 'low') [-1, 1].forEach((s) => this.mesh(new THREE.BoxGeometry(0.15, 1, len), std(type === 'freedom' ? '#6a5038' : '#9aa3ad'), s * (width / 2 - 0.1), deckY + 1.1, cz, g));
+    if (type === 'freedom') {
+      // 옛 철교 교각 (부서진 다리)
+      for (let z = z0 - 6; z > z1 + 6; z -= 16) this.mesh(new THREE.BoxGeometry(5, 12, 3), std('#9a8f80'), -14, 0, z, g);
+      for (let k = 0; k < 3; k++) {
+        const t = this.mesh(new THREE.BoxGeometry(4, 4, 15), std('#4a4a4a', { metalness: 0.5, wireframe: true }), -14, 8, z0 - 14 - k * 16, g);
+        t.material.wireframe = true;
+      }
+    }
+    if (type === 'arch') {
+      // 큰 아치 두 줄 + 행어
+      const am = std(color, { roughness: 0.4, metalness: 0.2 });
+      [-1, 1].forEach((s) => {
+        const arc = this.mesh(new THREE.TorusGeometry(len * 0.35, 0.6, 10, 60, Math.PI), am, s * (width / 2), deckY, cz, g);
+        arc.rotation.y = Math.PI / 2;
+        for (let k = 1; k < 10; k++) {
+          const a = (k / 10) * Math.PI;
+          const zz = cz + Math.cos(a) * len * 0.35, hh = Math.sin(a) * len * 0.35;
+          this.mesh(new THREE.CylinderGeometry(0.06, 0.06, hh, 4), am, s * (width / 2), deckY + hh / 2, zz, g);
+        }
+      });
+    }
+    if (type === 'cable') {
+      // 주탑과 사장 케이블
+      const tm = std('#e9e9e4', { roughness: 0.6 });
+      const tz = cz;
+      [-1, 1].forEach((s) => this.mesh(new THREE.BoxGeometry(1.4, 34, 2), tm, s * (width / 2 + 0.5), deckY + 12, tz, g));
+      this.mesh(new THREE.BoxGeometry(width + 3, 1.6, 2), tm, 0, deckY + 28, tz, g);
+      const cm = new THREE.LineBasicMaterial({ color: '#dfe3e6' });
+      [-1, 1].forEach((s) => {
+        for (let k = 1; k <= 8; k++) {
+          for (const dir of [-1, 1]) {
+            const pts = [new THREE.Vector3(s * (width / 2 + 0.5), deckY + 26 - k * 0.6, tz), new THREE.Vector3(s * (width / 2), deckY + 0.7, tz + dir * k * (len / 18))];
+            g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), cm));
+          }
+        }
+      });
+    }
+    if (type === 'low') {
+      // 잠수교 위로 넘실대는 물
+      const flow = this.mesh(new THREE.PlaneGeometry(width + 2, len), new THREE.MeshStandardMaterial({ color: '#e8f2f2', transparent: true, opacity: 0.35 }), 0, 1.05, cz, g);
+      flow.rotation.x = -Math.PI / 2;
+      this.anim.push((t) => { flow.material.opacity = 0.25 + 0.15 * Math.sin(t * 3); });
+    }
+    g.position.set(X, 0, 0);
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.scene.add(g);
+  }
+
+  // 소양강 스카이워크: 강 위로 뻗은 유리 데크와 쏘가리 조형물
+  riverSkywalk(X, zShore, len) {
+    const g = new THREE.Group();
+    const steel = std('#e6e8ea', { metalness: 0.4, roughness: 0.35 });
+    const glass = new THREE.MeshStandardMaterial({ color: '#a7d8ef', transparent: true, opacity: 0.5, roughness: 0.05, metalness: 0.3 });
+    this.mesh(new THREE.BoxGeometry(4, 0.25, len), glass, 0, 4, -len / 2, g);
+    [-2, 2].forEach((dx) => this.mesh(new THREE.BoxGeometry(0.1, 1.1, len), glass, dx, 4.6, -len / 2, g));
+    for (let i = 0; i <= 4; i++) this.mesh(new THREE.CylinderGeometry(0.35, 0.4, 8, 10), steel, 0, 0, -i * (len / 4), g);
+    // 쏘가리 조형물 (금빛 물고기)
+    const gold = std('#d8b04a', { metalness: 0.8, roughness: 0.3 });
+    const fish = this.mesh(new THREE.SphereGeometry(2.4, 20, 14), gold, 6, 6, 4, g);
+    fish.scale.set(1.8, 0.8, 0.5);
+    const tail = this.mesh(new THREE.ConeGeometry(1.4, 2.4, 4), gold, 10.4, 6.4, 4, g);
+    tail.rotation.z = Math.PI / 2;
+    this.mesh(new THREE.CylinderGeometry(0.3, 0.3, 4, 8), steel, 6, 2, 4, g);
+    g.position.set(X, 0, zShore + 3);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.scene.add(g);
+  }
+
+  // 소양강처녀상: 강변 받침대 위 여인상
+  maiden(X, Z) {
+    const g = new THREE.Group();
+    const stone = std('#cfc8ba');
+    const bronze = std('#8a7a5a', { metalness: 0.5, roughness: 0.45 });
+    this.mesh(new THREE.CylinderGeometry(2.4, 2.8, 2.4, 16), stone, 0, 1.2, 0, g);
+    this.mesh(new THREE.CylinderGeometry(0.5, 1.3, 4.4, 16), bronze, 0, 4.6, 0, g); // 치마
+    this.mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.6, 12), bronze, 0, 7.5, 0, g);
+    this.mesh(new THREE.SphereGeometry(0.42, 16, 12), bronze, 0, 8.7, 0, g);
+    this.mesh(new THREE.SphereGeometry(0.3, 12, 10), bronze, 0, 8.9, -0.35, g); // 쪽진 머리
+    g.rotation.y = Math.PI;
+    this.add(g, X, Z, -0.2);
+  }
 }
 
 // 작은 어선 (선실·마스트·집어등)
