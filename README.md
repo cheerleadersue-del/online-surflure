@@ -26,7 +26,14 @@ js/scene3d.js              3D 월드 (Three.js): 하늘·물 셰이더·적송 �
 js/avatar3d.js             3D 아바타와 입장 화면 미리보기
 js/textures.js             코드로 그리는 텍스처 (모래·자갈·수피·방호벽·도로·라벨)
 js/scene.js                공용 수학/색 함수, 시간대 팔레트
-vendor/three/              Three.js r160 (MIT, 사이트에 포함해 외부 CDN 없이 동작)
+vendor/three/              Three.js r170 + GLTFLoader/RGBELoader (MIT, 외부 CDN 없이 동작)
+js/assets.js               실사 스캔 자료 로더
+assets/                    실사 스캔 자료 (모두 Poly Haven, CC0 — 출처 표시 의무 없음)
+  hdri/                    실사 하늘: kloofendal_48d_partly_cloudy_puresky(낮), belfast_sunset_puresky(노을)
+  textures/                모래 sand_01·damp_beach_sand·coast_sand_01, 자갈 dry_river_pebbles, 숲바닥 forest_leaves_02,
+                           바위 rock_boulder_dry, 콘크리트 concrete_floor_worn_001, 아스팔트 asphalt_02, 수피 pine_bark,
+                           옷감 denim_fabric, 솔잎 pine_needles(pine_tree_01 잔가지 스캔으로 만든 카드)
+  models/                  coast_land_rocks_03·coast_rocks_01(해안 바위), life_jacket(구명조끼), fishermans_hat(버킷햇), rubber_boots(장화)
 js/audio.js                Web Audio로 만드는 자연의 소리
 js/fishing.js              낚시 미니게임
 js/store.js                인증글 저장 (클라우드 / 로컬)
