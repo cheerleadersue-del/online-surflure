@@ -1,11 +1,12 @@
 import {
   LINES, ZONES, WORLD_END, BOAT_DOCK, METHODS, AVATAR_OPTIONS, NAME_IDEAS, DEFAULT_AVATAR,
-  SPECIES_SUGGEST, BAIT_SUGGEST, TIDE, WEATHER, timeSlot, estWaterTemp, zoneAt,
+  SPECIES_SUGGEST, timeSlot, estWaterTemp, zoneAt,
 } from './data.js';
 import { smooth, hashStr } from './scene.js';
 import { World } from './scene3d.js';
 import { AvatarPreview } from './avatar3d.js';
 import { loadAssets } from './assets.js';
+import { Net } from './net.js';
 import { SoundScape } from './audio.js';
 import { Fishing } from './fishing.js';
 import { Store, sampleReports } from './store.js';
@@ -56,6 +57,9 @@ let knownIds = null;
 const fishing = new Fishing(audio, {
   onUI: renderFishUI,
   onCatch: (f) => showCatch(f),
+  onHit: (f) => onHit(f),
+  onFight: (info) => onFight(info),
+  onFightEnd: (ok) => onFightEnd(ok),
 });
 st.fishing = fishing;
 
@@ -142,10 +146,13 @@ function enterSea() {
     rebuildFlags();
     buildMinimap();
     history.replaceState(null, '', `?line=${st.line}`);
+    net.connect(st.line, { name: st.look.name, look: st.look });
+    chatLog(`${LINES[st.line].name}에 입장했어요. 💬 소통 버튼으로 인사해 보세요!`, 'sys');
   });
 }
 
 function goHome() {
+  net.leave();
   fade(() => {
     st.playing = false;
     st.hideAvatar = true;
@@ -370,6 +377,7 @@ function renderFishUI(ui) {
 let pendingCatch = null;
 function showCatch(f) {
   pendingCatch = f;
+  net.sendEvent('land', { fish: f.name, size: f.size });
   const av = st.avatar;
   scene.showCatch(f, st.onBoat ? scene.boat.position.x : av.X, st.onBoat ? 1.2 : av.Y, st.onBoat ? scene.boat.position.z + 1.5 : av.Z);
   setTimeout(() => openCatchDialog(f), 2600);
@@ -489,42 +497,26 @@ $('#d-like').addEventListener('click', async () => {
 // ── 인증글 쓰기 ──
 let photoData = null;
 const W = (id) => $(`#w-${id}`);
-function fillSelect(sel, opts) { opts.forEach((o) => sel.append(el('option', { value: o, text: o || '선택 안 함' }))); }
-fillSelect(W('tide'), TIDE);
-fillSelect(W('weather'), WEATHER);
 SPECIES_SUGGEST.forEach((s) => $('#species-list').append(el('option', { value: s })));
-BAIT_SUGGEST.forEach((s) => $('#bait-list').append(el('option', { value: s })));
 function fillSpots(line) {
   const dl = $('#spot-list');
   dl.textContent = '';
   LINES[line].spots.forEach((s) => dl.append(el('option', { value: s })));
 }
-function localISO(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+let writeMeta = { caughtAt: null, method: 'lure' };
 function openWrite(pre = {}) {
   $('#write-form').reset();
   photoData = null;
   W('photo-prev').hidden = true;
   W('photo-txt').hidden = false;
   W('err').textContent = '';
-  W('line').value = st.line || 'east';
-  fillSpots(W('line').value);
-  W('method').value = pre.method || fishing.mode;
-  W('time').value = localISO(new Date());
+  fillSpots(st.line || 'east');
+  writeMeta = { caughtAt: new Date(), method: pre.method || fishing.mode };
+  W('slot').value = timeSlot(new Date());
   if (pre.species) W('species').value = pre.species;
-  W('temp').placeholder = `추정 ${estWaterTemp(W('line').value)}`;
-  updateSlot();
   livePreview();
   $('#dlg-write').showModal();
 }
-function updateSlot() {
-  const d = new Date(W('time').value);
-  W('slot').value = isNaN(d) ? '' : timeSlot(d);
-}
-W('line').addEventListener('change', () => { fillSpots(W('line').value); W('temp').placeholder = `추정 ${estWaterTemp(W('line').value)}`; });
-W('time').addEventListener('input', updateSlot);
 W('photo').addEventListener('change', async () => {
   const file = W('photo').files[0];
   if (!file) return;
@@ -535,10 +527,11 @@ W('photo').addEventListener('change', async () => {
     W('photo-prev').src = data;
     W('photo-prev').hidden = false;
     W('photo-txt').hidden = true;
-    const filled = [];
-    if (exif.date) { W('time').value = localISO(exif.date); updateSlot(); filled.push('촬영 시각'); }
-    if (exif.gps) { W('lat').value = exif.gps.lat.toFixed(4); W('lng').value = exif.gps.lng.toFixed(4); filled.push('위치'); }
-    if (filled.length) toast(`사진에서 ${filled.join('·')} 정보를 가져왔어요. (공개를 원치 않으면 지워주세요)`);
+    if (exif.date) {
+      writeMeta.caughtAt = exif.date;
+      W('slot').value = timeSlot(exif.date);
+      toast('사진 촬영 시각으로 시간대를 채웠어요.');
+    }
     livePreview();
   } catch (err) {
     W('err').textContent = err.message;
@@ -546,16 +539,13 @@ W('photo').addEventListener('change', async () => {
 });
 $('#write-form').addEventListener('input', livePreview);
 
+// 사진 · 장소 · 시간대 · 어종만 받는다 (위치 좌표 등은 저장하지 않음)
 function formData() {
   const v = (id) => W(id).value.trim();
-  const n = (id) => (v(id) === '' ? null : Number(v(id)));
-  const d = new Date(v('time'));
+  const d = writeMeta.caughtAt || new Date();
   return {
-    line: v('line'), method: v('method'), spot: v('spot'), lat: n('lat'), lng: n('lng'),
-    caughtAt: isNaN(d) ? new Date().toISOString() : d.toISOString(), slot: v('slot'),
-    species: v('species'), size: n('size'), count: n('count') || 1, bait: v('bait'),
-    rod: v('rod'), reel: v('reel'), lineSpec: v('linespec'),
-    waterTemp: n('temp'), tide: v('tide'), weather: v('weather'), story: v('story'),
+    line: st.line || 'east', method: writeMeta.method || 'lure', spot: v('spot'), slot: v('slot'),
+    caughtAt: d.toISOString(), species: v('species'), count: 1,
     author: st.look.name || '익명 낚시꾼',
   };
 }
@@ -727,6 +717,17 @@ function frame(now) {
       boat: st.onBoat ? 1 : 0,
     }, dt);
 
+    scene.syncPeers(net.peers);
+    if (net.mode !== 'off') {
+      const ps = fishing.pose(t);
+      const act = scene.playerAct && (performance.now() - scene.playerAct.t0) / 1000 < scene.playerAct.dur ? scene.playerAct : null;
+      net.sendState({
+        X: +av.X.toFixed(2), Y: +av.Y.toFixed(2), Z: +av.Z.toFixed(2), yaw: +(scene.player ? scene.player.group.rotation.y : 0).toFixed(2),
+        w: av.walking ? 1 : 0, rod: ps.rod != null ? +ps.rod.toFixed(2) : null, bend: ps.bend ? +ps.bend.toFixed(2) : 0, noRod: ps.noRod ? 1 : 0,
+        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), act: act ? act.name : null, actT: act ? act.wall : null,
+      });
+    }
+    npcLife(dt);
     hudT -= dt;
     if (hudT <= 0) {
       hudT = 0.5;
@@ -746,6 +747,210 @@ function frame(now) {
   scene.render(st, t, dt);
   requestAnimationFrame(frame);
 }
+
+// ── 함께 낚시: 여러 명 동시 접속 · 동작 · 멘트 · 채팅 ──
+let voiceOn = true;
+function speak(text, { pitch = 1.15, rate = 1.05 } = {}) {
+  if (!voiceOn || !('speechSynthesis' in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR'; u.pitch = pitch; u.rate = rate; u.volume = 0.9;
+    const v = speechSynthesis.getVoices().find((x) => x.lang && x.lang.toLowerCase().startsWith('ko'));
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  } catch (_) { /* 음성 미지원 */ }
+}
+function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (_) { /* 미지원 */ } }
+
+const TALK = [
+  ['인사', ['안녕하세요~ 반갑습니다!', '조황 어때요?', '오늘 물때 좋네요~']],
+  ['양해', ['사장님~ 옆에서 피해 안 가게 던져도 되나요?', '옆자리 실례 좀 하겠습니다~', '줄 엉키면 바로 말씀해 주세요!', '뒤로 잠깐 지나갈게요~']],
+  ['매너', ['먼저 오셨으니 편하게 하세요~', '캐스팅 방향 조심할게요!', '쓰레기는 꼭 챙겨 갈게요', '채비·바늘 정리 잘 할게요', '고생하셨습니다~ 대박 나세요!']],
+  ['응답', ['네~ 편하게 하세요!', '그럼요, 같이 잡아요!', '감사합니다~', '나이스~!']],
+];
+const net = new Net({
+  onPeer: (p, isNew) => { if (isNew) chatLog(`${p.name}님이 들어왔어요 👋`, 'sys'); updatePeople(); },
+  onLeave: (p) => { chatLog(`${p.name}님이 나갔어요`, 'sys'); updatePeople(); },
+  onEvent: (p, ev) => onPeerEvent(p, ev),
+  onStatus: () => updatePeople(),
+});
+function updatePeople() {
+  const n = net.peers.size + 1;
+  const el2 = $('#hud-people');
+  el2.textContent = `👥 ${n}명`;
+  el2.title = net.mode === 'online' ? '실시간 접속 중' : net.mode === 'local' ? '이 브라우저의 다른 탭과만 연결됨' : '연결 안 됨';
+  el2.classList.toggle('cloud', net.mode === 'online');
+}
+function chatLog(text, cls = '', who = '') {
+  const ul = $('#chat-log');
+  const li = el('li', { class: cls });
+  if (who) li.append(el('b', { text: who }));
+  li.append(document.createTextNode(text));
+  ul.append(li);
+  while (ul.children.length > 60) ul.firstChild.remove();
+  ul.scrollTop = ul.scrollHeight;
+}
+function distTo(pos) {
+  const av = st.avatar;
+  return pos ? Math.hypot(pos.x - av.X, pos.z - av.Z) : Infinity;
+}
+// 말하기: 내 말풍선 + 모두에게 + 음성
+function sayLine(text, { voice = true, kind = 'say' } = {}) {
+  scene.sayPlayer(text);
+  net.sendEvent(kind, { text });
+  chatLog(text, 'me', `${st.look.name || '나'}: `);
+  if (voice && kind === 'say') speak(text);
+}
+
+let myHighfive = 0;
+function doAction(a) {
+  if (!st.playing) return;
+  if (fishing.busy && fishing.state !== 'result') return toast('낚시 중에는 할 수 없어요.');
+  audio.ui();
+  st.avatar.target = null;
+  const start = (name, dur) => { scene.playerAction(name, dur); scene.playerAct.wall = Date.now(); };
+  if (a === 'bow') { start('bow', 1.6); sayLine('안녕하세요~'); }
+  else if (a === 'wave') { start('wave', 3); scene.sayPlayer('👋'); net.sendEvent('emote', { text: '👋' }); }
+  else if (a === 'sit') { start('sit', 1e6); }
+  else if (a === 'nice') { sayLine('나이스~!'); audio.clap && audio.clap(); }
+  else if (a === 'highfive') {
+    start('highfive', 1.4);
+    myHighfive = Date.now();
+    net.sendEvent('highfive', {});
+    checkHighfive();
+  } else if (a === 'castle') {
+    const z = zoneAt(st.avatar.x);
+    if (!['beach', 'sandpath'].includes(z.id)) return toast('모래성은 모래 해변에서 쌓을 수 있어요.');
+    start('castle', 3.6);
+    const pos = scene.frontOfPlayer(0.75);
+    const seed = Math.floor(Math.random() * 9999);
+    setTimeout(() => { scene.addCastle(pos.X, pos.Z, seed); net.sendEvent('castle', { X: pos.X, Z: pos.Z, seed }); }, 400);
+  }
+}
+// 가까이(3m) 있는 사람과 4초 안에 같이 누르면 성공
+function checkHighfive() {
+  const now = Date.now();
+  if (now - myHighfive > 4000) return;
+  for (const p of net.peers.values()) {
+    if (p.hf && Math.abs(p.hf - myHighfive) < 4000 && distTo(scene.peerPos(p.id)) < 3.2) { highfiveOK(p.name); p.hf = 0; return; }
+  }
+  // 근처 NPC는 늘 받아준다
+  const npcs = scene.npcs || [];
+  for (let i = 0; i < npcs.length; i++) {
+    const g = npcs[i].a.group.position;
+    if (Math.hypot(g.x - st.avatar.X, g.z - st.avatar.Z) < 3.2) { scene.sayNpc(i, '짝! ✋'); highfiveOK(npcs[i].n.name); return; }
+  }
+}
+function highfiveOK(name) {
+  myHighfive = 0;
+  audio.clap && audio.clap(true);
+  scene.sayPlayer('짝! ✋');
+  vibrate(60);
+  toast(`${name}님과 하이파이브! ✋`);
+}
+
+function onPeerEvent(p, ev) {
+  const pos = scene.peerPos(p.id);
+  const near = distTo(pos) < 40;
+  if (ev.type === 'say' || ev.type === 'chat' || ev.type === 'emote') {
+    scene.sayPeer(p.id, ev.text);
+    if (ev.type !== 'emote') chatLog(ev.text, '', `${p.name}: `);
+    if (ev.type === 'say' && near) speak(ev.text, { pitch: 0.95 + (p.id.charCodeAt(0) % 5) * 0.08 });
+  } else if (ev.type === 'hit') {
+    scene.sayPeer(p.id, '히트!! 🎣');
+    chatLog(`${p.name}님 히트!`, 'sys');
+    if (near) {
+      // 옆 사람 히트: 나이스~!
+      audio.clap && audio.clap();
+      setTimeout(() => sayLine('나이스~!'), 500);
+    } else actionToast(`${p.name}님이 히트했어요!`, '👏 나이스', () => sayLine('나이스~!'));
+  } else if (ev.type === 'land') {
+    scene.sayPeer(p.id, `${ev.fish || '물고기'} 잡았다! 🎉`);
+    chatLog(`${p.name}님이 ${ev.fish || '물고기'}${ev.size ? ` ${ev.size}cm` : ''} 랜딩!`, 'sys');
+  } else if (ev.type === 'castle') {
+    scene.addCastle(ev.X, ev.Z, ev.seed);
+  } else if (ev.type === 'highfive') {
+    p.hf = Date.now();
+    if (myHighfive && Date.now() - myHighfive < 4000 && distTo(pos) < 3.2) highfiveOK(p.name);
+  }
+}
+
+// NPC도 가끔 입질을 받는다 → 옆이면 나이스~!
+let npcNext = 40 + Math.random() * 40;
+function npcLife(dt) {
+  npcNext -= dt;
+  if (npcNext > 0 || !scene.npcs || !scene.npcs.length) return;
+  npcNext = 60 + Math.random() * 70;
+  const i = Math.floor(Math.random() * scene.npcs.length);
+  const g = scene.npcs[i].a.group.position;
+  scene.sayNpc(i, '히트!! 🎣');
+  if (Math.hypot(g.x - st.avatar.X, g.z - st.avatar.Z) < 35) {
+    audio.clap && audio.clap();
+    setTimeout(() => { scene.sayPlayer('나이스~!'); speak('나이스~!'); }, 500);
+  }
+}
+
+let toastBtnT = 0;
+function actionToast(msg, label, fn) {
+  const t = $('#toast');
+  t.textContent = msg;
+  const b = el('button', { class: 'nice-btn', type: 'button', text: label, onclick: () => { fn(); t.classList.remove('show', 'actionable'); } });
+  t.append(b);
+  t.classList.add('show', 'actionable');
+  clearTimeout(toastBtnT);
+  toastBtnT = setTimeout(() => t.classList.remove('show', 'actionable'), 4500);
+}
+
+// 히트 → 1인칭 · 진동 · 드랙
+let vibT = 0;
+function onHit(f) {
+  scene.fpv = true;
+  vibrate([200, 70, 200]);
+  let fl = $('.hit-flash');
+  if (!fl) { fl = el('div', { class: 'hit-flash' }); document.body.append(fl); }
+  fl.classList.add('on');
+  setTimeout(() => fl.classList.remove('on'), 500);
+  net.sendEvent('hit', {});
+  // 근처 NPC가 응원
+  (scene.npcs || []).forEach((n, i) => {
+    const g = n.a.group.position;
+    if (Math.hypot(g.x - st.avatar.X, g.z - st.avatar.Z) < 30) setTimeout(() => { scene.sayNpc(i, '나이스~!'); speak('나이스~!', { pitch: 0.9 }); }, 600 + i * 300);
+  });
+}
+function onFight({ running, pressed }) {
+  scene.shake = running ? 1 : pressed ? 0.4 : 0.12;
+  const now = performance.now();
+  if ((running || pressed) && now - vibT > 260) { vibT = now; vibrate(running ? 140 : 45); }
+}
+function onFightEnd(ok) {
+  if (!scene.fpv) return;
+  scene.fpv = false;
+  scene.shake = 0;
+  vibrate(0);
+}
+
+// 소통 패널
+$('#btn-social').addEventListener('click', () => { $('#social-panel').hidden = !$('#social-panel').hidden; audio.ui(); });
+$('#sp-close').addEventListener('click', () => { $('#social-panel').hidden = true; });
+document.querySelectorAll('#sp-tabs button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('#sp-tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.sp-body').forEach((x) => { x.hidden = x.dataset.tab !== b.dataset.tab; });
+  if (b.dataset.tab === 'chat') setTimeout(() => $('#chat-input').focus(), 50);
+}));
+document.querySelectorAll('.act-grid button').forEach((b) => b.addEventListener('click', () => doAction(b.dataset.act)));
+TALK.forEach(([title, lines]) => {
+  $('#talk-list').append(el('h4', { text: title }));
+  lines.forEach((t) => $('#talk-list').append(el('button', { type: 'button', text: t, onclick: () => sayLine(t) })));
+});
+$('#sp-voice').addEventListener('change', (e) => { voiceOn = e.target.checked; });
+$('#chat-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('#chat-input').value.trim().slice(0, 80);
+  if (!v) return;
+  sayLine(v, { voice: false, kind: 'chat' });
+  $('#chat-input').value = '';
+});
+addEventListener('beforeunload', () => net.leave());
 
 // ── 시작 ──
 addEventListener('resize', () => scene.resize());
@@ -779,4 +984,4 @@ store.init().then((mode) => {
 }
 requestAnimationFrame(frame);
 // 개발 확인용 (?debug)
-if (params.has('debug')) window.__surf = { st, scene, fishing, audio };
+if (params.has('debug')) window.__surf = { st, scene, fishing, audio, net };

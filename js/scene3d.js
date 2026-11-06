@@ -1560,7 +1560,11 @@ export class World {
       b.rotation.x = Math.sin(t * 1.1) * 0.025;
       ax = b.position.x; ay = 1.05 + b.position.y; az = b.position.z + 1.5;
     }
-    P.pose({ walking: av.walking, phase: av.phase, rodE: pose.rod != null ? -pose.rod : 1.25, bend: pose.bend || 0, noRod: !!pose.noRod, t });
+    const act = this.playerAct && (performance.now() - this.playerAct.t0) / 1000 < this.playerAct.dur ? this.playerAct : null;
+    if (av.walking || fishingPose) this.playerAct = null;
+    P.pose({ walking: av.walking, phase: av.phase, rodE: pose.rod != null ? -pose.rod : 1.25, bend: pose.bend || 0, noRod: !!pose.noRod, t,
+      action: act && act.name, actionT: act ? (performance.now() - act.t0) / 1000 : 0 });
+    P.setFirstPerson(!!this.fpv && !st.hideAvatar);
     P.group.position.set(ax, ay + P.bob, az);
     const yawTarget = fishingPose || st.onBoat ? Math.PI : (av.yaw ?? Math.PI / 2);
     P.group.rotation.y += angDiff(yawTarget, P.group.rotation.y) * Math.min(1, dt * 10);
@@ -1619,6 +1623,7 @@ export class World {
       } else a.line.visible = false;
     });
 
+    this.updatePeers(t, dt);
     // 바다 위의 배·부표
     this.sailing.forEach((b) => {
       const u = b.userData;
@@ -1677,6 +1682,22 @@ export class World {
       cam.lookAt(this.camLook);
       return;
     }
+    if (this.fpv && this.player) {
+      // 1인칭: 내 눈높이에서 걸린 물고기 쪽을 본다
+      const P = this.player;
+      const eye = P.head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.05, 0));
+      const fwd = new THREE.Vector3(0, 0, -1);
+      const tgt = this.fpTarget ? this.fpTarget.clone() : eye.clone().add(fwd.multiplyScalar(30));
+      const sh = this.shake || 0;
+      eye.x += (Math.random() - 0.5) * sh * 0.06; eye.y += (Math.random() - 0.5) * sh * 0.05;
+      cam.position.lerp(eye, Math.min(1, dt * 10));
+      this.camLook.lerp(tgt, Math.min(1, dt * 6));
+      cam.lookAt(this.camLook);
+      cam.rotation.z += (Math.random() - 0.5) * sh * 0.02;
+      if (cam.fov !== 64) { cam.fov = 64; cam.updateProjectionMatrix(); }
+      return;
+    }
+    if (cam.fov === 64) { cam.fov = this.portrait ? 62 : 50; cam.updateProjectionMatrix(); }
     const o = this.orbit;
     const k = Math.min(1, dt * 6);
     o.yaw += angDiff(o.tYaw, o.yaw) * k;
@@ -1715,6 +1736,98 @@ export class World {
     cam.position.lerp(pos, Math.min(1, dt * 8));
     this.camLook.lerp(look, Math.min(1, dt * 8));
     cam.lookAt(this.camLook);
+    if (this.shake) cam.position.add(new THREE.Vector3((Math.random() - 0.5) * this.shake * 0.08, (Math.random() - 0.5) * this.shake * 0.06, 0));
+  }
+
+  // ── 함께 있는 사람들 ──
+  syncPeers(peers) {
+    if (!this.scene) return;
+    this.peerAvs = this.peerAvs || new Map();
+    for (const [id, pa] of this.peerAvs) {
+      if (!peers.has(id)) { this.scene.remove(pa.a.group); if (pa.line) this.scene.remove(pa.line); this.peerAvs.delete(id); }
+    }
+    for (const [id, p] of peers) {
+      if (!p.st || !p.look) continue;
+      let pa = this.peerAvs.get(id);
+      const key = JSON.stringify(p.look) + p.name;
+      if (pa && pa.key !== key) { this.scene.remove(pa.a.group); pa = null; }
+      if (!pa) {
+        const a = new Avatar(p.look, p.name, { small: true });
+        a.group.position.set(p.st.X, p.st.Y, p.st.Z);
+        this.scene.add(a.group);
+        pa = { a, key, X: p.st.X, Y: p.st.Y, Z: p.st.Z, yaw: p.st.yaw || 0, phase: 0 };
+        this.peerAvs.set(id, pa);
+      }
+      pa.p = p;
+    }
+  }
+
+  updatePeers(t, dt) {
+    if (!this.peerAvs) return;
+    for (const [, pa] of this.peerAvs) {
+      const st = pa.p && pa.p.st;
+      if (!st) continue;
+      const k = Math.min(1, dt * 8);
+      const dx = st.X - pa.X, dz = st.Z - pa.Z;
+      const far = Math.hypot(dx, dz) > 20;
+      pa.X = far ? st.X : pa.X + dx * k;
+      pa.Z = far ? st.Z : pa.Z + dz * k;
+      pa.Y += (st.Y - pa.Y) * k;
+      pa.yaw += angDiff(st.yaw || 0, pa.yaw) * k;
+      if (st.w) pa.phase += dt * 10;
+      const act = st.act && st.actT != null ? st.act : null;
+      pa.a.pose({ walking: !!st.w, phase: pa.phase, rodE: st.rod != null ? -st.rod : 1.25, bend: st.bend || 0, noRod: !!st.noRod, t: t + pa.X,
+        action: act, actionT: act ? (Date.now() - st.actT) / 1000 : 0 });
+      pa.a.group.position.set(pa.X, pa.Y + pa.a.bob, pa.Z);
+      pa.a.group.rotation.y = pa.yaw;
+      // 낚싯줄
+      const fishing = st.f && ['flying', 'retrieve', 'waiting', 'bite', 'fight'].includes(st.f);
+      if (!pa.line) {
+        pa.line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6 }));
+        pa.line.frustumCulled = false;
+        this.scene.add(pa.line);
+      }
+      pa.line.visible = !!fishing;
+      if (fishing) {
+        pa.a.group.updateMatrixWorld(true);
+        const tip = pa.a.tipWorld(new THREE.Vector3());
+        const d = st.fd || 0.5;
+        const end = new THREE.Vector3(pa.X + 1 + d * 6, 0.02, Math.min(pa.Z - 1.5, shoreZ(pa.X) - 1.5) - Math.pow(d, 0.9) * 80);
+        const mid = tip.clone().lerp(end, 0.5);
+        mid.y -= st.f === 'fight' ? 0.5 : 2.5;
+        pa.line.geometry.setFromPoints(new THREE.QuadraticBezierCurve3(tip, mid, end).getPoints(20));
+      }
+    }
+    // 모래성 쌓이는 모습
+    (this.castles || []).forEach((c) => {
+      const k = clamp((performance.now() - c.userData.born) / 3500);
+      c.scale.setScalar(0.2 + 0.8 * k);
+    });
+  }
+
+  peerById(id) { return this.peerAvs && this.peerAvs.get(id); }
+  peerPos(id) { const pa = this.peerById(id); return pa ? new THREE.Vector3(pa.X, pa.Y, pa.Z) : null; }
+
+  sayPeer(id, text) { const pa = this.peerById(id); if (pa) pa.a.say(text); }
+  sayPlayer(text) { if (this.player) this.player.say(text); }
+  sayNpc(i, text) { if (this.npcs[i]) this.npcs[i].a.say(text); }
+
+  playerAction(name, dur = 2.5) { this.playerAct = { name, t0: performance.now(), dur }; }
+
+  // 모래성 (모두에게 보인다)
+  addCastle(X, Z, seed = 1) {
+    this.castles = this.castles || [];
+    const g = makeCastle(seed, this.assets && this.assets.tex.sand.map);
+    g.position.set(X, heightAt(X, Z) - 0.02, Z);
+    g.userData.born = performance.now();
+    this.scene.add(g);
+    this.castles.push(g);
+    if (this.castles.length > 30) this.scene.remove(this.castles.shift());
+  }
+  frontOfPlayer(dist = 0.8) {
+    const P = this.player;
+    const yaw = P ? P.group.rotation.y : 0;
+    return { X: P.group.position.x + Math.sin(yaw) * dist, Z: P.group.position.z + Math.cos(yaw) * dist };
   }
 
   // ── 카메라 조작 API ──
@@ -1926,6 +2039,7 @@ export class World {
       lp = waterPos(f.d);
       if (s === 'fight') lp.x += Math.sin(t * 7) * (f.run > 0 ? 1.4 : 0.5);
     }
+    this.fpTarget = lp.clone();
     const sag = s === 'fight' ? (1 - f.tension) * 2.5 : s === 'flying' ? 0 : 3.5;
     this.setLine(tip, lp, sag);
     if (s === 'flying') {
@@ -2129,5 +2243,29 @@ function needlePad() {
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
+// 모래성: 둥근 탑 + 원뿔 지붕 + 성벽
+function makeCastle(seed, sandMap) {
+  const r = rng(seed);
+  const m = new THREE.MeshStandardMaterial({ color: '#e2cb98', roughness: 1, map: sandMap || null });
+  const g = new THREE.Group();
+  const add = (geo, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
+  add(new THREE.CylinderGeometry(0.32, 0.38, 0.18, 20), 0, 0.09, 0);
+  add(new THREE.CylinderGeometry(0.12, 0.14, 0.32, 14), 0, 0.34, 0);
+  add(new THREE.ConeGeometry(0.13, 0.16, 14), 0, 0.58, 0);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + r();
+    const x = Math.cos(a) * 0.26, z = Math.sin(a) * 0.26;
+    add(new THREE.CylinderGeometry(0.06, 0.07, 0.2, 10), x, 0.25, z);
+    add(new THREE.ConeGeometry(0.07, 0.09, 10), x, 0.39, z);
+  }
+  // 꼭대기 깃발
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.2, 4), new THREE.MeshStandardMaterial({ color: '#7a5a3a' }));
+  pole.position.y = 0.74;
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.06), new THREE.MeshStandardMaterial({ color: '#ff5a5a', side: THREE.DoubleSide }));
+  flag.position.set(0.045, 0.8, 0);
+  g.add(pole, flag);
   return g;
 }

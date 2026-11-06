@@ -227,3 +227,34 @@ export function woodTexture() {
   }
   return tex(c, 1);
 }
+
+// 말풍선
+export function bubbleTexture(text) {
+  const [c0, g0] = canvas(8, 8);
+  g0.font = '700 44px Pretendard, sans-serif';
+  const lines = [];
+  let cur = '';
+  for (const ch of String(text)) {
+    if (g0.measureText(cur + ch).width > 560) { lines.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  const L = lines.slice(0, 3);
+  const w = Math.min(600, Math.max(...L.map((l) => g0.measureText(l).width))) + 56;
+  const h = L.length * 54 + 44;
+  const [c, g] = canvas(Math.ceil(w), Math.ceil(h + 22));
+  g.fillStyle = 'rgba(255,255,255,0.96)';
+  g.strokeStyle = 'rgba(20,40,70,0.25)';
+  g.lineWidth = 3;
+  g.beginPath();
+  g.roundRect(2, 2, w - 4, h - 4, 26);
+  g.moveTo(w / 2 - 16, h - 3); g.lineTo(w / 2, h + 18); g.lineTo(w / 2 + 16, h - 3);
+  g.fill(); g.stroke();
+  g.fillStyle = '#16233a';
+  g.font = '700 44px Pretendard, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  L.forEach((l, i) => g.fillText(l, w / 2, 26 + 27 + i * 54 - 6));
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return { tex: t, aspect: c.width / c.height };
+}

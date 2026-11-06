@@ -110,12 +110,18 @@ export class Fishing {
     this.tension = 0.25;
     this.slack = 0;
     this.run = 0;
-    this.nextRun = 0.8 + Math.random() * 1.5;
-    this.msg = '히트! 텐션 게이지가 빨간색이 되지 않게 감아주세요';
+    this.nextRun = 0.6 + Math.random() * 0.8;
+    // 감고 있으면 5~7초 안에 랜딩
+    this.fightT = 5 + Math.random() * 2;
+    this.progress = 0;
+    this.d0 = Math.max(0.15, this.d);
+    this.msg = '히트!! 릴을 누르고 감으세요! 텐션이 빨개지면 잠깐 놓아주세요';
+    this.hooks.onHit && this.hooks.onHit(this.fish);
   }
 
   finish(ok, msg) {
     this.state = ok ? 'result' : 'idle';
+    this.hooks.onFightEnd && this.hooks.onFightEnd(ok);
     this.audio.reel(false);
     this.audio.drag(false);
     this.msg = msg;
@@ -195,35 +201,37 @@ export class Fishing {
       const f = this.fish;
       this.nextRun -= dt;
       if (this.nextRun <= 0 && this.run <= 0) {
-        this.run = 0.6 + f.str * 0.9;
-        this.nextRun = 1 + Math.random() * 2.2;
+        this.run = 0.5 + f.str * 0.7;
+        this.nextRun = 0.9 + Math.random() * 1.4;
       }
       const running = this.run > 0;
       if (running) this.run -= dt;
-      this.audio.drag(running, f.str);
-      const pull = (running ? 0.55 : 0.12) * f.str;
+      // 드랙 소리: 감는 동안 계속, 물고기가 차고 나가면 더 세게
+      this.audio.drag(this.pressed || running, running ? 0.6 + f.str * 0.4 : 0.25);
       if (this.pressed) {
-        this.tension += dt * (0.18 + pull * 1.6);
-        this.d -= dt * (running ? 0.015 : 0.09) * (1.1 - f.str * 0.4);
+        this.progress += (dt / this.fightT) * (running ? 0.55 : 1.18);
+        this.tension += dt * (running ? 0.32 + f.str * 0.25 : -0.05);
         this.slack = 0;
       } else {
-        this.tension -= dt * 0.55;
-        this.d += dt * pull * 0.12;
-        if (this.tension < 0.08) this.slack += dt;
+        this.tension -= dt * 0.6;
+        this.progress -= dt * 0.03;
+        if (this.tension < 0.06) this.slack += dt;
       }
-      this.tension = clamp(this.tension, 0, 1.2);
-      this.d = clamp(this.d, 0, 1);
+      this.tension = clamp(this.tension, 0.05, 1.2);
+      this.progress = clamp(this.progress, 0, 1);
+      this.d = this.d0 * (1 - this.progress);
+      this.hooks.onFight && this.hooks.onFight({ running, pressed: this.pressed, tension: this.tension });
       if (running && Math.random() < dt * 6) this.splash(0.5);
       if (this.tension >= 1) {
         this.audio.snap();
-        this.finish(false, `팅! 라인이 터졌어요… (${f.name}였을지도?) 텐션을 보면서 감아주세요.`);
+        this.finish(false, `팅! 라인이 터졌어요… (${f.name}였을지도?) 빨개지면 잠깐 놓아주세요.`);
         return;
       }
-      if (this.slack > 2.5) {
-        this.finish(false, '라인이 늘어져서 바늘이 빠졌어요. 계속 텐션을 유지하세요.');
+      if (this.slack > 3) {
+        this.finish(false, '라인이 늘어져서 바늘이 빠졌어요. 계속 감아주세요.');
         return;
       }
-      if (this.d <= 0.02) {
+      if (this.progress >= 1) {
         this.finish(true, `${f.name} ${f.size}cm 랜딩 성공!`);
         return;
       }
