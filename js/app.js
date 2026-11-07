@@ -36,6 +36,7 @@ const audio = new SoundScape();
 const scene = new World($('#world'));
 scene.audioHook = (d) => audio.boil(d);
 scene.audioSplash = () => audio.plop(0.15);
+scene.audioCrash = (d, power) => audio.crash && audio.crash(d, power);
 let preview = null;
 const store = new Store();
 const profile = load('surflure.profile', {});
@@ -748,7 +749,8 @@ function frame(now) {
     fishing.update(dt, { line: st.line, date, onBoat: st.onBoat, boil: scene.boilFactor() });
     // 캐스팅부터 랜딩까지 1인칭 (원투 받침대 대기는 3인칭)
     const fs = fishing.state;
-    const fpvState = ['charging', 'flying', 'retrieve', 'fight'].includes(fs) || (fishing.mode !== 'far' && ['waiting', 'bite'].includes(fs));
+    const fpvState = ['charging', 'flying', 'retrieve', 'fight'].includes(fs) || (fishing.mode !== 'far' && ['waiting', 'bite'].includes(fs)) || (fs === 'result' && scene.landing);
+    document.body.classList.toggle('fpv', fpvState);
     if (fpvState !== !!scene.fpv) { scene.fpv = fpvState; if (!fpvState) { scene.fightInfo = null; scene.shake = 0; } }
     scene.vmPose = { state: fs, power: fishing.power, k: fishing.k, jerk: fs === 'retrieve' ? fishing.jerk || 0 : 0, pressed: fishing.pressed };
 
