@@ -48,26 +48,26 @@
       </div>
 
       <div class="step">
-        <h2><span class="num">3</span> 포인트 선택</h2>
+        <h2><span class="num">3</span> 낚시터 선택</h2>
         <div class="line-cards">
           <button class="line-card east" data-line="east" type="button">
-            <strong>동해라인</strong>
-            <span>해수욕장 · 방파제 · 항구 15곳</span>
+            <strong>동해</strong>
+            <span>강릉 경포해수욕장</span>
           </button>
           <button class="line-card west" data-line="west" type="button">
-            <strong>서해라인</strong>
+            <strong>서해</strong>
             <span>시화방조제</span>
           </button>
           <button class="line-card sogari" data-line="sogari" type="button">
-            <strong>쏘가리 낚시</strong>
-            <span>임진강 군남댐·다리 6곳</span>
+            <strong>쏘가리 낚시(임진강)</strong>
+            <span>연천 군남댐</span>
           </button>
           <button class="line-card bass" data-line="bass" type="button">
-            <strong>배스 낚시</strong>
-            <span>소양강 포인트 5곳</span>
+            <strong>배스 낚시(소양강)</strong>
+            <span>소양강 스카이워크</span>
           </button>
         </div>
-        <div class="point-list" id="point-list"></div>
+        <div class="point-list" id="point-list" hidden></div>
       </div>
 
       <button id="enter-btn" class="btn-primary big" type="button" disabled>포인트 진입 🌊</button>
@@ -238,7 +238,7 @@
         <option value="today">오늘</option><option value="week">최근 7일</option><option value="month">최근 30일</option><option value="all">역대</option>
       </select>
       <select id="rk-line" aria-label="라인">
-        <option value="east">동해라인</option><option value="west">서해라인</option><option value="sogari">쏘가리 낚시</option><option value="bass">배스 낚시</option>
+        <option value="east">동해</option><option value="west">서해</option><option value="sogari">쏘가리 낚시(임진강)</option><option value="bass">배스 낚시(소양강)</option>
       </select>
       <select id="rk-point" aria-label="포인트"></select>
     </div>
@@ -280,7 +280,7 @@
           <option value="today">오늘</option><option value="week">최근 7일</option><option value="month">최근 30일</option><option value="all" selected>역대</option>
         </select>
         <select id="frk-line" aria-label="라인">
-          <option value="east">동해라인</option><option value="west">서해라인</option><option value="sogari">쏘가리 낚시</option><option value="bass">배스 낚시</option>
+          <option value="east">동해</option><option value="west">서해</option><option value="sogari">쏘가리 낚시(임진강)</option><option value="bass">배스 낚시(소양강)</option>
         </select>
       </div>
       <p class="dlg-sub" id="frk-note"></p>
