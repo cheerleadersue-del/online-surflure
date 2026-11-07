@@ -192,9 +192,9 @@ const lookFor = (outfit) => {
   const pants = outfit === 'wader' ? 'wader' : outfit === 'boots' ? 'jogger' : 'shorts';
   return { ...st.look, name: '', pants, shoes: outfit === 'basic' ? 'slipper' : outfit === 'boots' ? 'knee' : 'wader', vest: outfit === 'boots' };
 };
-function stepChar(d) {
-  const i = (OUTFITS.indexOf(st.gear.outfit) + d + OUTFITS.length) % OUTFITS.length;
-  const b = $('#g-outfit').children[i];
+function selectChar(o) {
+  if (o === st.gear.outfit) return;
+  const b = $('#g-outfit').children[OUTFITS.indexOf(o)];
   if (b) b.click();
 }
 function updateCharUI() {
@@ -219,28 +219,40 @@ function updateCharUI() {
   const m = document.querySelector('meta[name=theme-color]');
   if (m) m.content = '#2f4fd8';
 }
-{
-  // 캐러셀 터치: 옆 캐릭터를 누르면 그 캐릭터로, 좌우로 밀어도 넘어간다
-  let sx = null;
-  const hero = $('#hero');
-  hero.addEventListener('pointerdown', (e) => { sx = e.clientX; });
-  hero.addEventListener('pointerup', (e) => {
-    if (sx == null) return;
-    const dx = e.clientX - sx;
-    sx = null;
-    if (Math.abs(dx) > 40) return stepChar(dx < 0 ? 1 : -1);
-    const r = hero.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
-    if (x < 0.27) stepChar(-1);
-    else if (x > 0.73) stepChar(1);
-  });
-  hero.addEventListener('pointercancel', () => { sx = null; });
+// 캐릭터 카드: 장비 배너처럼 밀면 따라오고, 멈춘 카드가 선택된다. 옆 카드를 누르면 그 카드로 미끄러진다.
+const track = $('#char-track');
+const cardOf = (o) => track.querySelector(`[data-o="${o}"]`);
+function centerCard(card, smooth = true) {
+  if (!card) return;
+  track.scrollTo({ left: card.offsetLeft - (track.clientWidth - card.offsetWidth) / 2, behavior: smooth ? 'smooth' : 'auto' });
 }
+function nearestCard() {
+  const r = track.getBoundingClientRect(), cx = r.left + r.width / 2;
+  let best = null, bd = Infinity;
+  for (const c of track.children) { const b = c.getBoundingClientRect(); const d = Math.abs(b.left + b.width / 2 - cx); if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+let snapT = 0;
+const settle = () => { const c = nearestCard(); if (c) selectChar(c.dataset.o); };
+track.addEventListener('scroll', () => { clearTimeout(snapT); snapT = setTimeout(settle, 140); }, { passive: true });
+track.addEventListener('scrollend', settle);
+track.querySelectorAll('.c-card').forEach((c) => c.addEventListener('click', () => { centerCard(c); selectChar(c.dataset.o); }));
+addEventListener('resize', () => centerCard(cardOf(st.gear.outfit), false));
 function drawPreview(t) {
   const c = $('#avatar-preview');
-  if (!preview) preview = new AvatarPreview(c);
-  const i = OUTFITS.indexOf(st.gear.outfit);
-  const side = (d) => lookFor(OUTFITS[(i + d + OUTFITS.length) % OUTFITS.length]);
-  preview.render(t, st.look, [side(-1), side(1)]);
+  if (!preview) { preview = new AvatarPreview(c); centerCard(cardOf(st.gear.outfit), false); }
+  // 카드마다 화면 위치를 읽어 캐릭터를 그 위에 세운다 (가운데서 멀수록 작게)
+  const r = track.getBoundingClientRect(), cx = r.left + r.width / 2;
+  const items = [...track.children].map((card) => {
+    const b = card.getBoundingClientRect();
+    const px = b.left + b.width / 2 - cx;
+    const k = Math.min(1, Math.abs(px) / (b.width + 14));
+    const sc = 1 - 0.18 * k;
+    card.style.transform = `scale(${sc.toFixed(3)})`;
+    const o = card.dataset.o;
+    return { look: lookFor(o), px, scale: sc, active: k < 0.5 };
+  });
+  preview.render(t, items);
 }
 
 function enterSea() {
