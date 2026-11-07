@@ -99,6 +99,11 @@ export class Fishing {
   }
 
   pickFish(line) {
+    // 민물(쏘가리·배스)에서 1% 확률로 황금쏘가리
+    if ((line === 'sogari' || line === 'bass') && Math.random() < 0.01) {
+      const r = Math.pow(Math.random(), 1.3);
+      return { name: '황금쏘가리', size: Math.round(30 + 28 * r), str: 0.75 + r * 0.25, max: 58, golden: true };
+    }
     const list = FISH[this.mode][line];
     // 미끼에 맞는 어종이 더 잘 문다
     const prefer = (this.gear && this.gear.bait.prefer) || [];

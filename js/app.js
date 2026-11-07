@@ -441,7 +441,17 @@ function renderFishUI(ui) {
 
 // ── 잡은 물고기 ──
 let pendingCatch = null;
+function goldenCelebrate(f) {
+  let fl = $('.gold-flash');
+  if (!fl) { fl = el('div', { class: 'gold-flash' }); document.body.append(fl); }
+  fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+  toast(`✨ 전설의 황금쏘가리 ${f.size}cm! (1% 확률)`);
+  setTimeout(() => shout(pick(['황금쏘가리다!!', '와… 황금쏘가리!', '대박! 황금이다!']), { cut: true, pitch: 1.45, rate: 1.05 }), 900);
+  net.sendEvent('chat', { text: `✨ 황금쏘가리 ${f.size}cm 잡았어요!` });
+  vibrate([120, 60, 120, 60, 300]);
+}
 function showCatch(f) {
+  if (f.name === '황금쏘가리') goldenCelebrate(f);
   setTimeout(() => shout(pick(['나이스!', '와~!', '우와 대박!', '오예~!', '됐다!', '와 크다!', '나이스 손맛!', '역시~!']), { cut: true, pitch: 1.35, rate: 1.1 }), 150);
   pendingCatch = f;
   net.sendEvent('land', { fish: f.name, size: f.size });
