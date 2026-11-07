@@ -103,9 +103,10 @@ export const GEAR = {
     { id: 'minnow', name: '미노우', tag: '표층·중층', bite: 1.1, prefer: ['농어', '황어', '감성돔', '쏘가리', '강준치'] },
   ],
   outfit: [
-    { id: 'basic', name: '기본형', tag: '반바지·슬리퍼', wade: -0.25 },
-    { id: 'boots', name: '무릎 장화', tag: '긴바지·장화', wade: -0.45 },
-    { id: 'wader', name: '웨이더', tag: '가슴 장화', wade: -1.05 },
+    // cast: 물에 깊이 들어갈수록 더 멀리 (비거리 배율)
+    { id: 'basic', name: '기본형', tag: '반바지·슬리퍼', wade: -0.25, cast: 0.92 },
+    { id: 'boots', name: '무릎 장화', tag: '긴바지·장화', wade: -0.45, cast: 0.97 },
+    { id: 'wader', name: '웨이더', tag: '가슴 장화', wade: -1.05, cast: 1.04 },
   ],
 };
 export const gearOf = (kind, id) => GEAR[kind].find((g) => g.id === id) || GEAR[kind][0];

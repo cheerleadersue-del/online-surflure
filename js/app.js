@@ -207,9 +207,11 @@ function updateCharUI() {
   E.style.setProperty('--c-center-2', C.c[1]);
   E.style.setProperty('--c-left', L.c[0]);
   E.style.setProperty('--c-right', R.c[0]);
-  $('#char-name').textContent = C.ko;
-  $('#char-en').textContent = C.en;
-  $('#char-desc').textContent = C.desc;
+  // 비거리 표시: 옷차림별 배율을 점 3개로
+  const oc = GEAR.outfit.find((g) => g.id === o).cast;
+  const lv = oc >= 1 ? 3 : oc >= 0.95 ? 2 : 1;
+  $('#cast-meter').textContent = '●'.repeat(lv) + '○'.repeat(3 - lv);
+  $("#cast-label").textContent = `비거리 ${["", "보통", "좋음", "최고"][lv]}`;
   $('#char-count').textContent = `${i + 1} / ${n}`;
   const dots = $('#char-dots');
   if (dots.children.length !== n) { dots.textContent = ''; OUTFITS.forEach(() => dots.append(el('i'))); }
@@ -217,14 +219,20 @@ function updateCharUI() {
   const m = document.querySelector('meta[name=theme-color]');
   if (m) m.content = '#2f4fd8';
 }
-$('#char-prev').addEventListener('click', () => stepChar(-1));
-$('#char-next').addEventListener('click', () => stepChar(1));
 {
-  // 손가락으로 좌우 밀기
+  // 캐러셀 터치: 옆 캐릭터를 누르면 그 캐릭터로, 좌우로 밀어도 넘어간다
   let sx = null;
   const hero = $('#hero');
-  hero.addEventListener('pointerdown', (e) => { if (!e.target.closest('button')) sx = e.clientX; });
-  hero.addEventListener('pointerup', (e) => { if (sx == null) return; const dx = e.clientX - sx; sx = null; if (Math.abs(dx) > 40) stepChar(dx < 0 ? 1 : -1); });
+  hero.addEventListener('pointerdown', (e) => { sx = e.clientX; });
+  hero.addEventListener('pointerup', (e) => {
+    if (sx == null) return;
+    const dx = e.clientX - sx;
+    sx = null;
+    if (Math.abs(dx) > 40) return stepChar(dx < 0 ? 1 : -1);
+    const r = hero.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
+    if (x < 0.27) stepChar(-1);
+    else if (x > 0.73) stepChar(1);
+  });
   hero.addEventListener('pointercancel', () => { sx = null; });
 }
 function drawPreview(t) {
@@ -415,7 +423,7 @@ const endPointer = (e) => {
     fade(() => { fishing.reset(); scene.clearCatch(); scene.goToBoil(st.avatar, boil); }, 350);
     setTimeout(() => {
       const dist = Math.max(10, Math.round(Math.abs(boil.Z - st.avatar.Z)));
-      const need = Math.round(Math.min(100, Math.max(10, ((dist / 88) / fishing.gear.rod.cast - 0.3) / 0.68 * 100)));
+      const need = Math.round(Math.min(100, Math.max(10, ((dist / 88) / (fishing.gear.rod.cast * (fishing.gear.outfit.cast || 1)) - 0.3) / 0.68 * 100)));
       toast(`🐟 보일링까지 약 ${dist}m — 캐스팅 힘 ${need}% 정도로 던져보세요!`);
     }, 500);
     return;
