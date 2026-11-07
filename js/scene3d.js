@@ -2484,6 +2484,7 @@ export class World {
   // ── 보일링: 베이트 떼를 쫓는 물고기가 수면을 끓게 하는 곳 ──
   buildBoils() {
     this.boils = [];
+    if (MODE.river) return; // 민물에는 보일링 없음
     const scene = this.scene;
     const foamTex = TX.softDot('255,255,255');
     const fishGeo = new THREE.CapsuleGeometry(0.05, 0.22, 3, 6);

@@ -5,7 +5,7 @@ export class SoundScape {
   constructor() {
     this.ctx = null;
     this.muted = false;
-    this.mix = { forest: 0, sea: 0, gull: 0, rock: 0, boat: 0 };
+    this.mix = { forest: 0, sea: 0, gull: 0, rock: 0, boat: 0, stream: 0 };
     this._nextBird = 0;
     this._nextGull = 0;
     this._nextWave = 0;
@@ -42,6 +42,9 @@ export class SoundScape {
     this.waveFoam = this._loop(this.white, 'bandpass', 2600, 0.5, this.seaBus);
     // 바닷바람(해변의 넓은 공기감)
     this.seaAir = this._loop(this.pink, 'lowpass', 380, 0.4, this.seaBus);
+    // 강물: 졸졸 흐르는 여울(고역 물방울) + 낮게 흐르는 물살
+    this.brook = this._loop(this.white, 'bandpass', 2200, 1.4);
+    this.flow = this._loop(this.pink, 'lowpass', 650, 0.5);
   }
 
   setMuted(m) {
@@ -98,7 +101,16 @@ export class SoundScape {
     const m = this.mix;
 
     const breathe = 0.6 + 0.4 * Math.sin(t * 0.37) * Math.sin(t * 0.13 + 1.3);
-    this.wind.g.gain.setTargetAtTime(m.forest * 0.22 * breathe + m.sea * 0.04, t, 0.4);
+    this.wind.g.gain.setTargetAtTime(m.forest * 0.22 * breathe + m.sea * 0.04 + (m.stream || 0) * 0.07 * breathe, t, 0.4);
+    // 잔잔한 강물 소리: 물방울이 튀듯 조금씩 흔들리는 음색
+    const st = m.stream || 0;
+    if (this.brook) {
+      const gurgle = 0.6 + 0.4 * Math.sin(t * 7.3) * Math.sin(t * 3.1 + 1) + (Math.random() - 0.5) * 0.25;
+      this.brook.g.gain.setTargetAtTime(st * 0.05 * gurgle, t, 0.05);
+      this.brook.f.frequency.setTargetAtTime(1800 + 900 * Math.abs(Math.sin(t * 2.3)) + Math.random() * 400, t, 0.06);
+      this.flow.g.gain.setTargetAtTime(st * 0.09 * (0.85 + 0.15 * Math.sin(t * 0.4)), t, 0.5);
+      if (st > 0.5 && Math.random() < dt * 3) this._tone('sine', 900 + Math.random() * 900, 1500 + Math.random() * 800, 0.012 * st, 0.004, 0.05); // 물방울 '퐁'
+    }
     this.wind.f.frequency.setTargetAtTime(500 + 500 * breathe, t, 0.5);
     this.needles.g.gain.setTargetAtTime(m.forest * 0.05 * breathe * breathe, t, 0.3);
     this.seaAir.g.gain.setTargetAtTime(m.sea * 0.12 + m.boat * 0.1, t, 0.6);
@@ -131,8 +143,8 @@ export class SoundScape {
     }
 
     if (m.forest > 0.2 && t >= this._nextBird) {
-      this._bird(m.forest);
-      this._nextBird = t + 1.5 + Math.random() * 5;
+      this._bird(m.stream ? 0.55 : m.forest);
+      this._nextBird = t + (m.stream ? 3 + Math.random() * 6 : 1.5 + Math.random() * 5);
     }
     if (m.gull > 0.2 && t >= this._nextGull) {
       this._gull(m.gull);
