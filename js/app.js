@@ -447,6 +447,7 @@ function showCatch(f) {
   submitRecord(f);
   const av = st.avatar;
   const img = DATA.fishImage(f.name);
+  audio.land && audio.land();
   if (img) scene.showTrophy(f, img); // 직접 그린 물고기: 1인칭으로 크게
   else scene.showCatch(f, st.onBoat ? scene.boat.position.x : av.X, st.onBoat ? 1.2 : av.Y, st.onBoat ? scene.boat.position.z + 1.5 : av.Z);
   setTimeout(() => openCatchDialog(f), img ? 3200 : 2600);
@@ -457,7 +458,7 @@ function openCatchDialog(f) {
   $('#c-img').hidden = !img;
   if (img) $('#c-img').src = img;
   $('#c-title').textContent = counted ? `${f.name} ${f.size}cm!` : `${f.name} ${f.size}cm (잡어)`;
-  $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${st.point ? st.point.name : ''} · ${timeSlot(nowDate())}\n${counted ? '랭킹에 기록됐어요.' : `${RANK_TARGET[st.line]}만 랭킹에 올라가요.`} 물고기를 놓아줄까요?`;
+  $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${st.point ? st.point.name : ''} · ${timeSlot(nowDate())}\n${counted ? '랭킹에 기록됐어요. ' : ''}물고기를 놓아줄까요?`;
   $('#dlg-catch').showModal();
 }
 // 방생: 쪼그려 앉아 두 손으로 물고기를 물로 돌려보낸다
@@ -961,7 +962,6 @@ async function submitRecord(f) {
   if (!st.point) return;
   if (!isRankFish(st.line, f.name)) {
     // 대상 어종이 아니면 잡어: 랭킹에 올리지 않는다
-    setTimeout(() => toast(`🐟 ${f.name}는 잡어예요 — 이 방은 ${RANK_TARGET[st.line]}만 랭킹에 올라가요`), 1200);
     return;
   }
   const before = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3, species: RANK_TARGET[st.line] || null });
