@@ -446,7 +446,7 @@ function goldenCelebrate(f) {
   if (!fl) { fl = el('div', { class: 'gold-flash' }); document.body.append(fl); }
   fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
   toast(`✨ 전설의 황금쏘가리 ${f.size}cm! (1% 확률)`);
-  setTimeout(() => shout(pick(['황금쏘가리다!!', '와… 황금쏘가리!', '대박! 황금이다!']), { cut: true, pitch: 1.45, rate: 1.05 }), 900);
+  setTimeout(() => shout('황쏘다!', { cut: true, pitch: 1.45, rate: 1.05 }), 900);
   net.sendEvent('chat', { text: `✨ 황금쏘가리 ${f.size}cm 잡았어요!` });
   vibrate([120, 60, 120, 60, 300]);
 }
