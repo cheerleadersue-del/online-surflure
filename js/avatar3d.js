@@ -404,41 +404,70 @@ export class Avatar {
   }
 }
 
-// 입장 화면의 회전하는 미리보기
+// 입장 화면 미리보기: 가운데 캐릭터는 크게 돌고, 양옆 캐릭터가 살짝 보인다
 export class AvatarPreview {
   constructor(canvas) {
     this.cv = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-    this.renderer.setSize(canvas.clientWidth || 200, canvas.clientHeight || 240, false);
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(28, (canvas.clientWidth || 200) / (canvas.clientHeight || 240), 0.1, 50);
-    this.camera.position.set(0, 0.95, 4.1);
-    this.camera.lookAt(0, 0.72, 0);
-    this.scene.add(new THREE.HemisphereLight('#eaf5ff', '#e2cfa8', 2.2));
-    const d = new THREE.DirectionalLight('#fff4e0', 2.6);
+    this.camera = new THREE.PerspectiveCamera(30, 1.4, 0.1, 50);
+    this.camera.position.set(0, 0.86, 4.4);
+    this.camera.lookAt(0, 0.66, 0);
+    this.scene.add(new THREE.HemisphereLight('#ffffff', '#f4e2c8', 2.4));
+    const d = new THREE.DirectionalLight('#fff6ea', 2.4);
     d.position.set(2, 4, 3);
     this.scene.add(d);
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(0.5, 32), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.12 }));
+    const rim = new THREE.DirectionalLight('#ffffff', 1.2);
+    rim.position.set(-3, 2, -2);
+    this.scene.add(rim);
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.12, depthWrite: false }));
     ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0.005;
     this.scene.add(ground);
     this.key = '';
+    this.avs = [];
+    this.w = 0; this.h = 0;
   }
 
-  render(t, look) {
-    const key = JSON.stringify(look) + Avatar.ver;
+  fit() {
+    const w = this.cv.clientWidth || 420, h = this.cv.clientHeight || 300;
+    if (w === this.w && h === this.h) return;
+    this.w = w; this.h = h;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    // 좁은 화면에서도 옆 캐릭터가 살짝 보이게
+    this.camera.position.z = w / h < 1.2 ? 5.2 : 4.4;
+    this.camera.updateProjectionMatrix();
+  }
+
+  // look: 가운데, sides: [왼쪽, 오른쪽] (없으면 가운데만)
+  render(t, look, sides = []) {
+    this.fit();
+    const key = JSON.stringify([look, sides]) + Avatar.ver;
     if (key !== this.key) {
       this.key = key;
-      if (this.av) this.scene.remove(this.av.group);
-      this.av = new Avatar(look, look.name || '아이디');
-      this.scene.add(this.av.group);
+      this.avs.forEach((a) => this.scene.remove(a.group));
+      this.avs = [look, ...sides].map((lk, i) => {
+        const a = new Avatar(lk, i === 0 ? (lk.name || '') : '');
+        this.scene.add(a.group);
+        return a;
+      });
     }
-    const walking = (t % 6) < 3;
-    this.av.pose({ walking, phase: t * 7, rodE: 1.3, t });
-    this.av.group.rotation.y = Math.sin(t * 0.6) * 0.8 + 0.3;
-    this.av.group.position.y = this.av.bob;
+    const [c, l, r] = this.avs;
+    c.pose({ walking: false, phase: 0, rodE: 1.3, t, action: (t % 9) > 7.2 ? 'wave' : null, actionT: (t % 9) - 7.2 });
+    c.group.rotation.y = Math.sin(t * 0.5) * 0.7;
+    c.group.position.set(0, c.bob, 0);
+    [[l, -1], [r, 1]].forEach(([a, s]) => {
+      if (!a) return;
+      a.pose({ walking: false, phase: 0, noRod: true, t: t + s });
+      a.group.position.set(s * 1.75, 0, -0.9);
+      a.group.rotation.y = -s * 0.55;
+      a.group.scale.setScalar(0.85);
+    });
     this.renderer.render(this.scene, this.camera);
   }
 }
