@@ -95,7 +95,7 @@ export class Records {
   }
 
   // 순위: 포인트(없으면 points 목록 전체)·기간(since ISO)별, 아이디마다 최고 기록 1개
-  async ranking({ point = null, points = null, since = null, limit = 10 } = {}) {
+  async ranking({ point = null, points = null, since = null, limit = 10, species = null } = {}) {
     await this.ready;
     let rows = [];
     if (this.db) {
@@ -103,11 +103,12 @@ export class Records {
       if (point) q = q.eq('point', point);
       else if (points) q = q.in('point', points);
       if (since) q = q.gte('created_at', since);
+      if (species) q = q.eq('species', species);
       const { data, error } = await q;
       if (error) { console.warn('랭킹 불러오기 실패', error.message); return []; }
       rows = data;
     } else {
-      rows = readLS(LS_REC, []).filter((r) => (!point || r.point === point) && (!points || points.includes(r.point)) && (!since || r.created_at >= since));
+      rows = readLS(LS_REC, []).filter((r) => (!point || r.point === point) && (!points || points.includes(r.point)) && (!since || r.created_at >= since) && (!species || r.species === species));
     }
     const best = new Map();
     for (const r of rows) {

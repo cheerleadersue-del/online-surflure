@@ -206,3 +206,7 @@ export const DEFAULT_AVATAR = {
   pantsColor: '#4b5136',
   vest: true,
 };
+
+// 라인별 랭킹 대상 어종 (없으면 모든 어종). 대상이 아니면 '잡어'
+export const RANK_TARGET = { sogari: '쏘가리', bass: '배스' };
+export const isRankFish = (line, name) => !RANK_TARGET[line] || name === RANK_TARGET[line];
