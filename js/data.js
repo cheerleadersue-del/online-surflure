@@ -25,8 +25,8 @@ export const LINES = {
   sogari: {
     id: 'sogari',
     name: '쏘가리 낚시',
-    desc: '임진강의 여울과 바위 사이, 다리 아래 명당. 쏘가리·꺽지·누치의 강.',
-    spots: ['파주 통일대교', '파주 임진각 자유의다리', '파주 리비교', '파주·연천 비룡대교', '연천 장남교'],
+    desc: '임진강 군남댐과 다리 아래 여울 명당. 쏘가리·꺽지·누치의 강.',
+    spots: ['연천 군남댐', '연천 장남교', '연천 동이대교', '연천 임진교', '연천 북삼교', '연천 삼화교'],
     temps: [3, 4, 7, 12, 17, 21, 24, 25, 21, 15, 9, 4],
   },
   bass: {
@@ -82,13 +82,14 @@ export const POINTS = {
   west: [
     { id: 'sihwa', type: 'dike', name: '시화방조제', mark: 'moonTower', desc: '바다와 호수 사이 11km 방조제, 달 전망대' },
   ],
-  // 쏘가리: 임진강 주요 다리
+  // 쏘가리: 임진강 주요 포인트
   sogari: [
-    { id: 'tongil', type: 'bridge', name: '파주 통일대교', mark: 'girder', desc: '임진강을 가로지르는 긴 콘크리트 다리' },
-    { id: 'imjingak', type: 'bridge', name: '임진각 자유의다리', mark: 'freedom', desc: '나무 다리와 옛 철교 교각이 남은 곳' },
-    { id: 'libby', type: 'bridge', name: '파주 리비교', mark: 'old', desc: '낮게 놓인 오래된 콘크리트 다리와 여울' },
-    { id: 'biryong', type: 'bridge', name: '파주·연천 비룡대교', mark: 'arch', desc: '붉은 아치가 걸린 다리 아래 바위 여울' },
+    { id: 'gunnam', type: 'bridge', name: '연천 군남댐', mark: 'dam', desc: '수문이 늘어선 댐 아래 거센 여울' },
     { id: 'jangnam', type: 'bridge', name: '연천 장남교', mark: 'cable', desc: '주탑과 케이블이 있는 다리, 주상절리 절벽' },
+    { id: 'dongi', type: 'bridge', name: '연천 동이대교', mark: 'arch', desc: '붉은 아치 다리 아래 바위 여울' },
+    { id: 'imjin', type: 'bridge', name: '연천 임진교', mark: 'old', desc: '낮게 놓인 오래된 다리와 자갈 여울' },
+    { id: 'buksam', type: 'bridge', name: '연천 북삼교', mark: 'girder', desc: '긴 교각 사이로 흐르는 깊은 소' },
+    { id: 'samhwa', type: 'bridge', name: '연천 삼화교', mark: 'low', desc: '물이 넘나드는 낮은 다리 주변 여울' },
   ],
   // 배스: 소양강
   bass: [
@@ -99,7 +100,7 @@ export const POINTS = {
     { id: 'sewol', type: 'river', name: '소양강댐 하류 세월교', mark: 'low', desc: '물이 넘나드는 낮은 잠수교' },
   ],
 };
-export const POINT_TYPE_NAME = { beach: '해수욕장', breakwater: '방파제', port: '항구', dike: '방조제', bridge: '임진강 다리', river: '소양강' };
+export const POINT_TYPE_NAME = { beach: '해수욕장', breakwater: '방파제', port: '항구', dike: '방조제', bridge: '임진강', river: '소양강' };
 export const findPoint = (id) => Object.values(POINTS).flat().find((p) => p.id === id) || null;
 
 // 장비: 효과는 캐스팅 거리(cast) · 줄 강도(strong) · 감는 속도(speed) · 입질(bite) · 어종 선호(prefer)
