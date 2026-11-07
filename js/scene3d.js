@@ -1880,7 +1880,7 @@ export class World {
     }
     if (!this.headSpot) {
       // 헤드랜턴 불빛 (밤): 바라보는 앞쪽 땅을 둥글게 비춘다
-      this.headSpot = new THREE.SpotLight('#fff1cf', 0, 32, 0.5, 0.5, 1.1);
+      this.headSpot = new THREE.SpotLight('#fff1cf', 0, 80, 0.42, 0.45, 1.0);
       this.scene.add(this.headSpot, this.headSpot.target);
     }
     if (this.npcs.length && this.npcVer !== Avatar.ver) { this.npcs.forEach(({ a }) => this.scene.remove(a.group)); this.npcs = []; }
@@ -1923,13 +1923,13 @@ export class World {
     this.lamp.intensity = lampOn ? 2.5 : this.night ? 1.2 : 0;
     P.setLamp(lampOn);
     const hs = this.headSpot;
-    hs.intensity = lampOn ? 320 : 0;
+    hs.intensity = lampOn ? 900 : 0;
     if (lampOn) {
       if (this.fpv) {
         const cam = this.camera;
         hs.position.copy(cam.position);
         cam.getWorldDirection(this._lampV || (this._lampV = new THREE.Vector3()));
-        hs.target.position.copy(cam.position).addScaledVector(this._lampV, 10);
+        hs.target.position.copy(cam.position).addScaledVector(this._lampV, 30);
       } else {
         P.group.updateMatrixWorld(true);
         P.lampG.getWorldPosition(hs.position);
