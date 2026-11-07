@@ -2007,7 +2007,7 @@ export class World {
           c.position.set(rel.to.x, -0.25 - k2 * 0.6, rel.to.z - k2 * 3);
           c.rotation.set(0, Math.PI / 2, 0);
           c.userData.bend.t.value = t * 18;
-          if (k2 >= 1) this.clearCatch();
+          if (k2 >= 1) { this.scene.remove(c); if (this.caught === c) this.caught = null; } // 다음 물고기 연출은 건드리지 않는다
         }
       } else if (c.userData.flat) {
         const u = c.userData.bend;
@@ -2955,6 +2955,42 @@ export class World {
       }
       Object.assign(g.userData, { fishMesh, uni, L, drops, ready: true, top: vh * 0.42 });
     });
+  }
+
+  // 그림이 없는 어종(메기 등): 3D 물고기를 같은 방식으로 1인칭 화면 가득
+  showTrophy3D(fish) {
+    this.clearTrophy();
+    const g = new THREE.Group();
+    this.camera.add(g);
+    this.trophy = g;
+    this.landing = true;
+    clearTimeout(this.landingT);
+    const vh = 2 * 1.3 * Math.tan(THREE.MathUtils.degToRad((this.portrait ? 92 : 78) / 2));
+    const L = vh * (0.6 + Math.min(0.2, (fish.size || 40) / 450));
+    const f = makeRealFish(fish.name, Math.floor(Math.random() * 1000));
+    const holder = new THREE.Group();
+    f.scale.setScalar(L / 0.86);
+    f.rotation.set(0, 0, -Math.PI / 2); // 옆면이 카메라를 향하게, 머리를 위로
+    f.position.y = -L * 0.5;
+    holder.add(f);
+    g.add(holder);
+    const line = new THREE.Mesh(new THREE.CylinderGeometry(0.0016, 0.0016, 3, 4), new THREE.MeshBasicMaterial({ color: '#d9f26a' }));
+    line.position.y = 1.5;
+    g.add(line);
+    const dropTex = TX.softDot('235,248,255');
+    const drops = [];
+    for (let i = 0; i < 26; i++) {
+      const d = new THREE.Sprite(new THREE.SpriteMaterial({ map: dropTex, transparent: true, depthWrite: false, opacity: 0 }));
+      d.userData = { life: 0 };
+      g.add(d);
+      drops.push(d);
+    }
+    // 화면 안에서도 조명을 받도록
+    const lt = new THREE.PointLight('#ffffff', 2.5, 4);
+    lt.position.set(0.4, 0.3, 0.6);
+    g.add(lt);
+    const b = f.userData.bend;
+    g.userData = { born: performance.now(), size: fish.size || 40, ready: true, fishMesh: holder, uni: { uT: b.t, uA: b.a }, L, drops, top: vh * 0.42 };
   }
 
   updateTrophy(t, dt) {

@@ -214,6 +214,7 @@ function enterSea() {
     showBanner(st.point.name, st.point.desc);
     st.flags = [];
     rankSig = '';
+    st.myBest = null;
     buildMinimap();
     refreshRank();
     history.replaceState(null, '', `?line=${st.line}&point=${st.point.id}`);
@@ -449,15 +450,15 @@ function showCatch(f) {
   const img = DATA.fishImage(f.name);
   audio.land && audio.land();
   if (img) scene.showTrophy(f, img); // 직접 그린 물고기: 1인칭으로 크게
-  else scene.showCatch(f, st.onBoat ? scene.boat.position.x : av.X, st.onBoat ? 1.2 : av.Y, st.onBoat ? scene.boat.position.z + 1.5 : av.Z);
-  setTimeout(() => openCatchDialog(f), img ? 3200 : 2600);
+  else scene.showTrophy3D(f); // 그림이 없는 어종도 같은 방식
+  setTimeout(() => openCatchDialog(f), 3200);
 }
 function openCatchDialog(f) {
   const counted = isRankFish(st.line, f.name);
   const img = DATA.fishImage(f.name);
   $('#c-img').hidden = !img;
   if (img) $('#c-img').src = img;
-  $('#c-title').textContent = counted ? `${f.name} ${f.size}cm!` : `${f.name} ${f.size}cm (잡어)`;
+  $('#c-title').textContent = `${f.name} ${f.size}cm!`;
   $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${st.point ? st.point.name : ''} · ${timeSlot(nowDate())}\n${counted ? '랭킹에 기록됐어요. ' : ''}물고기를 놓아줄까요?`;
   $('#dlg-catch').showModal();
 }
@@ -781,7 +782,7 @@ function frame(now) {
       net.sendState({
         X: +av.X.toFixed(2), Y: +av.Y.toFixed(2), Z: +av.Z.toFixed(2), yaw: +(scene.player ? scene.player.group.rotation.y : 0).toFixed(2),
         w: av.walking ? 1 : 0, rod: ps.rod != null ? +ps.rod.toFixed(2) : null, bend: ps.bend ? +ps.bend.toFixed(2) : 0, noRod: ps.noRod ? 1 : 0,
-        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), act: act ? act.name : null, actT: act ? act.wall : null,
+        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), rk: st.myBest || null, act: act ? act.name : null, actT: act ? act.wall : null,
       });
     }
     npcLife(dt);
@@ -819,7 +820,8 @@ function speak(text, { pitch = 1.15, rate = 1.05 } = {}) {
 function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (_) { /* 미지원 */ } }
 
 const net = new Net({
-  onPeer: (p, isNew) => { if (isNew) chatLog(`${p.name}님이 들어왔어요 👋`, 'sys'); updatePeople(); },
+  onPeer: (p, isNew) => {
+    if (isNew && st.myBest) setTimeout(() => net.sendEvent('rec', { rec: st.myBest }), 500); if (isNew) chatLog(`${p.name}님이 들어왔어요 👋`, 'sys'); updatePeople(); },
   onLeave: (p) => { chatLog(`${p.name}님이 나갔어요`, 'sys'); updatePeople(); },
   onEvent: (p, ev) => onPeerEvent(p, ev),
   onStatus: () => updatePeople(),
@@ -854,6 +856,10 @@ function sendChat(text) {
 
 function onPeerEvent(p, ev) {
   const pos = scene.peerPos(p.id);
+  if (ev.type === 'rec' && ev.rec && st.point && ev.rec.point === st.point.id) {
+    if (records.addPeerRecord({ ...ev.rec, name: p.name })) { rankSig = ''; refreshRank(); }
+    return;
+  }
   if (ev.type === 'chat' && ev.text) {
     scene.sayPeer(p.id, ev.text);
     chatLog(ev.text, '', p.name);
@@ -939,6 +945,7 @@ const todayISO = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.
 let rankSig = '';
 async function refreshRank() {
   if (!st.point) return [];
+  for (const p of net.peers.values()) if (p.st && p.st.rk && p.st.rk.point === st.point.id) records.addPeerRecord({ ...p.st.rk, name: p.name });
   const top = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3, species: RANK_TARGET[st.line] || null });
   const sig = top.map((r) => `${r.name}|${r.size}|${r.species}`).join(',');
   if (sig === rankSig) return top;
@@ -957,7 +964,7 @@ async function refreshRank() {
   return top;
 }
 records.on((point) => { if (st.playing && st.point && (!point || point === st.point.id)) { rankSig = ''; refreshRank(); } });
-setInterval(() => { if (st.playing) refreshRank(); }, 20000);
+setInterval(() => { if (st.playing) refreshRank(); }, 5000);
 async function submitRecord(f) {
   if (!st.point) return;
   if (!isRankFish(st.line, f.name)) {
@@ -965,7 +972,11 @@ async function submitRecord(f) {
     return;
   }
   const before = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3, species: RANK_TARGET[st.line] || null });
-  await records.submit(st.point.id, st.look.name, f.name, f.size);
+  const ok = await records.submit(st.point.id, st.look.name, f.name, f.size);
+  // 같은 포인트 접속자에게 내 오늘 최고 기록을 실시간으로 알린다 (서버 저장이 실패해도 서로 보이게)
+  if (!st.myBest || f.size > st.myBest.size) st.myBest = { point: st.point.id, name: st.look.name, species: f.name, size: f.size, created_at: new Date().toISOString() };
+  net.sendEvent('rec', { rec: st.myBest });
+  if (ok === false) setTimeout(() => toast('⚠️ 기록 서버 저장에 실패했어요. 접속 중인 사람에게만 보여요. 새로고침 후 다시 시도해 주세요.'), 1500);
   rankSig = '';
   const top = await refreshRank();
   const rank = top.findIndex((r) => r.name === st.look.name && r.size === f.size);

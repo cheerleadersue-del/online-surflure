@@ -31,7 +31,7 @@ const LOOK = {
   끄리: { back: '#5c6e7a', belly: '#f0e8e0', pat: 'stripe', stripe: '#d77a5a', h: 0.22 },
   블루길: { back: '#4a5a6a', belly: '#e8b060', pat: 'bands', h: 0.5 },
   동자개: { back: '#8a6a2a', belly: '#e8d29a', pat: 'mottle', h: 0.2 },
-  메기: { back: '#3a3a34', belly: '#bdb8a8', pat: 'mottle', h: 0.16 },
+  메기: { back: '#3d3a30', belly: '#cbc4ae', pat: 'mottle', h: 0.17, barbels: true },
 };
 export const fishLook = (name) => LOOK[(name || '').replace(/\(.*\)/, '')] || LOOK.농어;
 
@@ -273,6 +273,19 @@ export function makeRealFish(name, seed = 1) {
   const th = look.eel ? H * 0.8 : Math.max(0.12, H * 0.75);
   fin([[tx, 0], [tx + 0.16, th * 0.75], [tx + 0.12, th * 0.15], [tx + 0.08, 0], [tx + 0.12, -th * 0.15], [tx + 0.16, -th * 0.75]]);
 
+  // 메기 수염
+  if (look.barbels) {
+    const bm = new THREE.MeshStandardMaterial({ color: '#2e2b24', roughness: 0.6 });
+    [[-1, 0.28], [1, 0.28], [-1, 0.16], [1, 0.16]].forEach(([side, len], i) => {
+      const pts = [];
+      for (let k = 0; k <= 8; k++) {
+        const u = k / 8;
+        pts.push(new THREE.Vector3(-0.47 + u * len * 0.6, -H * 0.05 - u * len * (i < 2 ? 0.25 : 0.55), side * (H * 0.12 + u * len * 0.55)));
+      }
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.005, 5), bm);
+      group.add(tube);
+    });
+  }
   // 눈 (볼록한 유리질)
   const eyeR = look.flat ? 0.022 : Math.max(0.012, H * 0.075);
   const irisM = new THREE.MeshPhysicalMaterial({ color: look.pat === 'blueDots' ? '#e8c060' : '#d8c890', roughness: 0.2, clearcoat: 1, metalness: 0.4 });
