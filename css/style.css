@@ -386,3 +386,5 @@ body.fpv .method-tabs, body.fpv .fish-msg, body.fpv #g-power { display: none; }
 body.fpv .view-pad, body.fpv .minimap, body.fpv .hud > .walk-hint { display: none; }
 body.fpv #fish-main { padding: 10px; font-size: 0.9rem; }
 @media (max-width: 760px) { body.fpv .fish-panel { bottom: 16px; width: 52vw; } }
+
+.rank-title small { opacity: 0.75; margin-left: 4px; font-size: 0.7rem; }
