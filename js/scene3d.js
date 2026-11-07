@@ -1066,6 +1066,7 @@ export class World {
   // ── 입장 포인트 ──
   setPoint(point, line) {
     this.point = point;
+    this.vmStyleWanted = point && point.type === 'beach' ? 'beach' : 'rock';
     this.line = null; // 다음 render에서 다시 짓는다
     this.pendingLine = line;
     this.build(line);
@@ -2072,7 +2073,7 @@ export class World {
       cam.position.lerp(eye, Math.min(1, dt * 10));
       this.camLook.lerp(look, Math.min(1, dt * 8));
       cam.lookAt(this.camLook);
-      cam.rotation.z += Math.sin(t * 0.7) * 0.012 + (Math.random() - 0.5) * sh * 0.02;
+      cam.rotation.z += Math.sin(t * 0.7) * 0.012 + (Math.random() - 0.5) * sh * 0.02 + (this.landing ? 0 : this.vmRoll || 0);
       const fov = this.portrait ? 92 : 78;
       if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); this.fpvFov = fov; }
       return;
@@ -2194,9 +2195,21 @@ export class World {
     const sl = new THREE.CylinderGeometry(0.06, 0.075, 1, 16, 1, true);
     sl.translate(0, 0.5, 0);
     this.vmSleeveR = add(vm, sl, sleeve);
-    this.vmSleeveL = add(vm, sl.clone(), sleeve);
+    this.vmSleeveL = add(vm, sl.clone(), sleeve.clone());
     this.vmForeR = add(vm, new THREE.CylinderGeometry(0.03, 0.036, 1, 12, 1, true).translate(0, 0.5, 0), skin);
-    this.vmForeL = add(vm, new THREE.CylinderGeometry(0.03, 0.036, 1, 12, 1, true).translate(0, 0.5, 0), skin);
+    this.vmForeL = add(vm, new THREE.CylinderGeometry(0.03, 0.036, 1, 12, 1, true).translate(0, 0.5, 0), skin.clone());
+    this.vmSkin = skin;
+    this.vmLeftSkin = lp.material = skin.clone();
+    lh.children.forEach((c) => { if (c.isMesh) c.material = this.vmLeftSkin; });
+    // 손목시계 (해변 스타일)
+    const watch = (this.vmWatch = new THREE.Group());
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 8, 20), new THREE.MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.5, metalness: 0.4 }));
+    band.scale.set(1, 1, 1.8);
+    const face = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.012, 0.045), new THREE.MeshStandardMaterial({ color: '#3a3d40', metalness: 0.7, roughness: 0.3 }));
+    face.position.y = 0.047;
+    watch.add(band, face);
+    vm.add(watch);
+    this.vmStyleName = '';
     // 블랭크 (매 프레임 휨 계산)
     this.vmRod = new THREE.Mesh(new THREE.BufferGeometry(), this.vmRodMat);
     vm.add(this.vmRod);
@@ -2223,7 +2236,36 @@ export class World {
   }
 
   // 자세 키프레임 (카메라 좌표): 그립 위치 g, 낚싯대 앙각 pitch·좌우 yaw, 시선 올림 look
+  // 해변(서프): 검은 소매 + 황갈색 장갑·시계, 오른손을 높이 든 서프루어 자세 / 갯바위: 흰 래쉬가드
+  setVmStyle(name) {
+    if (!this.vm || this.vmStyleName === name) return;
+    this.vmStyleName = name;
+    const beach = name === 'beach';
+    this.vmSleeveR.material.color.set(beach ? '#1b1d22' : '#f2f1ec');
+    this.vmSleeveL.material.color.set(beach ? '#1b1d22' : '#f2f1ec');
+    this.vmLeftSkin.color.set(beach ? '#c08a4e' : '#c98f68'); // 장갑
+    this.vmLeftSkin.roughness = beach ? 0.95 : 0.6;
+    this.vmForeL.material.color.set(beach ? '#c08a4e' : '#c98f68');
+    this.vmWatch.visible = beach;
+    this.vmReel.scale.setScalar(beach ? 1.65 : 1.3);
+  }
+
   vmKey(name) {
+    if (this.vmStyleName === 'beach') {
+      const KB = {
+        idle: { g: [0.24, -0.04, -0.44], pitch: 0.42, yaw: -0.42, look: -0.02, roll: 0 },
+        jerk: { g: [0.2, 0.1, -0.42], pitch: 1.05, yaw: -0.3, look: 0.22, roll: 0.04 },
+        back: { g: [0.3, 0.16, -0.16], pitch: 2.2, yaw: 0.3, look: 0.25, roll: 0 },
+        ready: { g: [0.24, -0.06, -0.4], pitch: 0.8, yaw: 0.0, look: 0.05, roll: 0 },
+        release: { g: [0.27, 0.15, -0.42], pitch: -0.38, yaw: -0.32, look: -0.18, roll: -0.05 },
+        fight: { g: [0.26, 0.06, -0.4], pitch: 0.72, yaw: -0.4, look: 0.1, roll: -0.14 },
+        run: { g: [0.26, -0.02, -0.46], pitch: 0.45, yaw: -0.5, look: 0.0, roll: -0.22 },
+        land: { g: [0.26, 0.04, -0.38], pitch: 1.2, yaw: 0.5, look: -0.6, roll: 0 },
+        wait: { g: [0.24, -0.08, -0.44], pitch: 0.3, yaw: -0.35, look: -0.04, roll: 0 },
+      };
+      const k = KB[name];
+      return { g: new THREE.Vector3(...k.g), pitch: k.pitch, yaw: k.yaw, look: k.look, roll: k.roll };
+    }
     const K = {
       idle: { g: [0.02, -0.24, -0.46], pitch: 0.34, yaw: -0.2, look: 0 },
       jerk: { g: [-0.02, 0.0, -0.44], pitch: 1.15, yaw: -0.08, look: 0.3 },
@@ -2236,10 +2278,10 @@ export class World {
       wait: { g: [0.03, -0.26, -0.46], pitch: 0.24, yaw: -0.18, look: -0.03 },
     };
     const k = K[name];
-    return { g: new THREE.Vector3(...k.g), pitch: k.pitch, yaw: k.yaw, look: k.look };
+    return { g: new THREE.Vector3(...k.g), pitch: k.pitch, yaw: k.yaw, look: k.look, roll: 0 };
   }
   vmMix(a, b, k) {
-    return { g: a.g.clone().lerp(b.g, k), pitch: lerp(a.pitch, b.pitch, k), yaw: lerp(a.yaw, b.yaw, k), look: lerp(a.look, b.look, k) };
+    return { g: a.g.clone().lerp(b.g, k), pitch: lerp(a.pitch, b.pitch, k), yaw: lerp(a.yaw, b.yaw, k), look: lerp(a.look, b.look, k), roll: lerp(a.roll || 0, b.roll || 0, k) };
   }
 
   // 현재 상태에 맞는 목표 자세
@@ -2269,6 +2311,9 @@ export class World {
     if (!vm) return;
     vm.visible = !!this.fpv;
     if (!this.fpv) { this.vmCur = null; return; }
+    // 해변 포인트의 모래 해변 구간이면 서프 스타일
+    const onSand = !!this.player && !MODE.river && !MODE.sihwa && this.player.group.position.x < LAY.peb0;
+    this.setVmStyle(onSand ? 'beach' : 'rock');
     const vp = this.vmPose || {};
     const fi = this.fightInfo;
     const tgt = this.vmTarget(t);
@@ -2278,6 +2323,7 @@ export class World {
     else this.vmCur = this.vmMix(this.vmCur, tgt, Math.min(1, dt * (fast ? 22 : 7)));
     const cur = this.vmCur;
     this.vmLook = cur.look;
+    this.vmRoll = cur.roll || 0;
     // 숨쉬기·흔들림
     const breathe = Math.sin(t * 1.6) * 0.006;
     const sh = this.shake || 0;
@@ -2297,7 +2343,7 @@ export class World {
     let bend = 0.04, pull = new THREE.Vector3(0, -1, 0);
     const lineTarget = this.landing && this.caught ? this.caught.getWorldPosition(new THREE.Vector3()) : this.fpTarget;
     if (lineTarget) pull = this.camera.worldToLocal(lineTarget.clone()).sub(G).normalize();
-    if (fi) bend = clamp(0.3 + fi.tension * 0.75 + (fi.running ? 0.3 : 0), 0, 1.25);
+    if (fi) bend = clamp(0.3 + fi.tension * 0.75 + (fi.running ? 0.3 : 0), 0, 1.25) * (this.vmStyleName === 'beach' ? 1.25 : 1);
     else if (this.landing) bend = 0.55;
     else if (vp.state === 'retrieve') bend = 0.08 + (vp.jerk || 0) * 0.22;
     else if (vp.state === 'charging') { bend = 0.12 + (vp.power || 0) * 0.25; pull.set(0, -1, 0.3).normalize(); }
@@ -2351,7 +2397,10 @@ export class World {
     this.vmLH.quaternion.copy(this.vmRF.quaternion);
     // 소매·팔: 손목 → 화면 밖 어깨
     const RH = toVm(this.vmRH, new THREE.Vector3(0.03, -0.05, 0.01));
-    const shR = new THREE.Vector3(0.42, -0.62, 0.15), shL = new THREE.Vector3(-0.48, -0.66, 0.15);
+    const beachSt = this.vmStyleName === 'beach';
+    // 해변 자세: 왼팔이 화면 왼쪽에서 가로로 뻗어 핸들을 잡는다
+    const shR = beachSt ? new THREE.Vector3(0.55, -0.35, 0.12) : new THREE.Vector3(0.42, -0.62, 0.15);
+    const shL = beachSt ? new THREE.Vector3(-0.75, -0.18, 0.05) : new THREE.Vector3(-0.48, -0.66, 0.15);
     const limb = (mesh, a, b, from = 0, to = 1) => {
       const p0 = a.clone().lerp(b, from), p1 = a.clone().lerp(b, to);
       const d = p1.clone().sub(p0);
@@ -2362,7 +2411,14 @@ export class World {
     limb(this.vmForeR, RH, shR, 0, 0.16);
     limb(this.vmSleeveR, RH, shR, 0.12, 1.2);
     limb(this.vmForeL, LH, shL, 0, 0.16);
-    limb(this.vmSleeveL, LH, shL, 0.12, 1.2);
+    limb(this.vmSleeveL, LH, shL, beachSt ? 0.3 : 0.12, 1.2);
+    if (beachSt) {
+      // 장갑 낀 손등 + 손목시계
+      limb(this.vmForeL, LH, shL, 0, 0.32);
+      const wp = LH.clone().lerp(shL, 0.22);
+      this.vmWatch.position.copy(wp);
+      this.vmWatch.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shL.clone().sub(LH).normalize());
+    }
     // 낚싯줄: 초리 → 루어/물고기
     const tw = this.vmTip.getWorldPosition(new THREE.Vector3());
     if (lineTarget && vp.state !== 'charging') {
