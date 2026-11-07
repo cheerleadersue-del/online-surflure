@@ -88,11 +88,12 @@ function applyOutfit() {
   const o = st.gear.outfit;
   st.look.pants = o === 'wader' ? 'wader' : o === 'boots' ? 'jogger' : 'shorts';
   st.look.shoes = o === 'basic' ? 'slipper' : o === 'boots' ? 'knee' : 'wader';
-  st.look.pantsColor = o === 'wader' ? '#4b5136' : o === 'boots' ? '#3a4a63' : '#4f7fb8';
-  st.look.jacket = o === 'basic' ? '#f2f2ee' : '#f26b1d';
-  st.look.vest = o !== 'basic';
+  // 색은 아바타 디자인(베이지 캡·청록 포인트)에 고정
+  st.look.pantsColor = o === 'wader' ? '#2f5d55' : '#cdb07a';
+  st.look.jacket = o === 'basic' ? '#f8f8f5' : '#efe6d6';
+  st.look.vest = o === 'boots';
   st.look.hat = 'cap';
-  st.look.hatColor = '#1f3b73';
+  st.look.hatColor = '#e8dcc5';
   st.look.rod = st.gear.rod;
   st.look.reel = st.gear.reel;
 }
@@ -380,7 +381,21 @@ cv.addEventListener('wheel', (e) => {
   e.preventDefault();
   scene.zoomBy(Math.exp(e.deltaY * 0.0012));
 }, { passive: false });
-document.querySelectorAll('#view-pad button').forEach((b) => b.addEventListener('click', () => {
+// 밤 헤드랜턴 켜기/끄기
+$('#lamp-btn').addEventListener('click', () => {
+  st.lampOn = st.lampOn === false;
+  audio.ui();
+  updateLampBtn();
+  toast(st.lampOn ? '🔦 헤드랜턴을 켰어요' : '헤드랜턴을 껐어요');
+});
+function updateLampBtn() {
+  const b = $('#lamp-btn');
+  b.hidden = !scene.night;
+  b.classList.toggle('on', st.lampOn !== false);
+  b.textContent = st.lampOn !== false ? '🔦 랜턴 끄기' : '🔦 랜턴 켜기';
+}
+let wasNight = null;
+document.querySelectorAll('#view-pad button[data-v]').forEach((b) => b.addEventListener('click', () => {
   audio.ui();
   const v = b.dataset.v;
   if (v === 'in') scene.zoomBy(0.7);
@@ -804,10 +819,15 @@ function frame(now) {
       net.sendState({
         X: +av.X.toFixed(2), Y: +av.Y.toFixed(2), Z: +av.Z.toFixed(2), yaw: +(scene.player ? scene.player.group.rotation.y : 0).toFixed(2),
         w: av.walking ? 1 : 0, rod: ps.rod != null ? +ps.rod.toFixed(2) : null, bend: ps.bend ? +ps.bend.toFixed(2) : 0, noRod: ps.noRod ? 1 : 0,
-        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), rk: st.myBest || null, act: act ? act.name : null, actT: act ? act.wall : null,
+        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), lp: st.lampOn === false ? 0 : 1, rk: st.myBest || null, act: act ? act.name : null, actT: act ? act.wall : null,
       });
     }
     npcLife(dt);
+    if (scene.night !== wasNight) {
+      wasNight = scene.night;
+      updateLampBtn();
+      if (scene.night && st.playing) toast(st.lampOn !== false ? '🌙 밤이에요. 헤드랜턴을 켰어요 🔦' : '🌙 밤이에요. 🔦 버튼으로 헤드랜턴을 켤 수 있어요');
+    }
     hudT -= dt;
     if (hudT <= 0) {
       hudT = 0.5;
