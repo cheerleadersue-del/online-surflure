@@ -187,6 +187,14 @@ function enterSea() {
   scene.setPoint(st.point, st.line);
   scene.setGearLook(st.gear);
   scene.wade = fishing.gear.outfit.wade;
+  // 쏘가리·배스(민물)는 서프루어만
+  const river = DATA.isRiver(st.point);
+  document.querySelectorAll('#method-tabs button').forEach((b) => {
+    b.hidden = river && b.dataset.m !== 'lure';
+    if (river) b.classList.toggle('on', b.dataset.m === 'lure');
+  });
+  if (river && fishing.mode !== 'lure') fishing.setMode('lure');
+  updatePanel();
   fade(() => {
     $('#entry').hidden = true;
     $('#hud').hidden = false;
