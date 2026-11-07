@@ -2258,7 +2258,7 @@ export class World {
 
   setGearLook(gear) {
     if (!this.vmRodMat) return;
-    const rod = { ajido622m: '#16181c', bottomslow992mh: '#33200f', planb862ml: '#10285c', troy612: '#4e141c' }[gear.rod] || '#15171a';
+    const rod = { ajido622m: '#16181c', bottomslow992mh: '#33200f', planb: '#10285c', inshore862ml: '#1a4440', troy612: '#4e141c' }[gear.rod] || '#15171a';
     const reel = { stella: '#b9a46a', vanford: '#1d1d1f', ultegra: '#8a9097', airity: '#5e6a7a' }[gear.reel] || '#1c1e22';
     this.vmRodMat.color.set(rod);
     this.vmReelMat.color.set(reel);
