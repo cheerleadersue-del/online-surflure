@@ -270,7 +270,7 @@ export class Avatar {
   makeBeam(lamp) {
     // 빛줄기 (밤에만)
     const beamG = new THREE.Group();
-    beamG.rotation.x = 0.32;
+    beamG.rotation.x = 0.13;
     lamp.add(beamG);
     // 랜턴에서 멀어질수록·가장자리일수록 흐려지는 빛줄기
     const beamM = (Avatar.beamM ||= new THREE.ShaderMaterial({
@@ -279,14 +279,14 @@ export class Avatar {
       vertexShader: 'varying float vA; varying vec3 vN; varying vec3 vV; void main(){ vA = uv.y; vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
       fragmentShader: 'uniform vec3 uCol; varying float vA; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(abs(dot(normalize(vN), normalize(vV))), 0.8); float a = pow(vA, 1.4) * 0.5 * f; gl_FragColor = vec4(uCol * a, a); }',
     }));
-    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.75, 3.2, 24, 1, true), beamM);
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(1.5, 8, 24, 1, true), beamM);
     beam.rotation.x = -Math.PI / 2;
-    beam.position.z = 1.6 + 0.05;
+    beam.position.z = 4 + 0.05;
     beam.renderOrder = 5;
     beamG.add(beam);
     this.beam = beamG;
     this.lampDir = new THREE.Object3D(); // 빛이 향하는 곳 (스포트라이트 겨냥)
-    this.lampDir.position.set(0, 0, 6);
+    this.lampDir.position.set(0, 0, 14);
     beamG.add(this.lampDir);
   }
 
