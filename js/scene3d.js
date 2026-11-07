@@ -1868,7 +1868,7 @@ export class World {
     this.waterU.uTime.value = t;
 
     // 플레이어 아바타
-    const lk = JSON.stringify(st.look);
+    const lk = JSON.stringify(st.look) + Avatar.ver;
     if (lk !== this.playerKey) {
       this.playerKey = lk;
       if (this.player) this.scene.remove(this.player.group);
@@ -1883,7 +1883,9 @@ export class World {
       this.headSpot = new THREE.SpotLight('#fff1cf', 0, 32, 0.5, 0.5, 1.1);
       this.scene.add(this.headSpot, this.headSpot.target);
     }
+    if (this.npcs.length && this.npcVer !== Avatar.ver) { this.npcs.forEach(({ a }) => this.scene.remove(a.group)); this.npcs = []; }
     if (!this.npcs.length) {
+      this.npcVer = Avatar.ver;
       this.npcs = st.npcs.map((n) => {
         const a = new Avatar(n.look, n.name, { small: true });
         this.scene.add(a.group);
@@ -2669,7 +2671,7 @@ export class World {
     for (const [id, p] of peers) {
       if (!p.st || !p.look) continue;
       let pa = this.peerAvs.get(id);
-      const key = JSON.stringify(p.look) + p.name;
+      const key = JSON.stringify(p.look) + p.name + Avatar.ver;
       if (pa && pa.key !== key) { this.scene.remove(pa.a.group); pa = null; }
       if (!pa) {
         const a = new Avatar(p.look, p.name, { small: true });

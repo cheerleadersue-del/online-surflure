@@ -2,12 +2,16 @@
 import * as THREE from '../vendor/three/three.module.min.js';
 import { nameTexture, bubbleTexture } from './textures.js';
 
+import { loadAvatarModels } from './avatarModel.js';
+
 const SKIN = '#f6d2b4';
 const fabric = (color) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.75, sheen: 0.6, sheenRoughness: 0.6, sheenColor: new THREE.Color('#ffffff') });
 const toy = (color, rough = 0.45) => new THREE.MeshPhysicalMaterial({ color, roughness: rough, clearcoat: 0.25, clearcoatRoughness: 0.5 });
 
 export class Avatar {
   static assets = null;
+  static models = null; // 직접 디자인한 3D 모델 (불러오면 ver가 올라간다)
+  static ver = 0;
 
   constructor(look, name, { small = false } = {}) {
     this.group = new THREE.Group();
@@ -44,6 +48,9 @@ export class Avatar {
     const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
     const cap = (r, l) => new THREE.CapsuleGeometry(r, l, 6, 14);
 
+    const M = Avatar.models && Avatar.models[kind];
+    if (M) this.buildModel(M);
+    else {
     // 몸 전체를 흔들기 위한 뿌리
     const root = (this.root = new THREE.Group());
     G.add(root);
@@ -192,6 +199,75 @@ export class Avatar {
     this.lensM = new THREE.MeshStandardMaterial({ color: '#f4f1e6', emissive: '#fff1c4', emissiveIntensity: 0, roughness: 0.15 });
     add(lamp, new THREE.CircleGeometry(0.022, 18), this.lensM, -0.008, 0, 0.0455).castShadow = false;
     add(lamp, sph(0.016, 10, 8), toy('#ff7a2f', 0.4), 0.038, 0.028, 0.012);
+    this.makeBeam(lamp);
+    }
+    this.setLamp(false);
+
+    // 낚싯대 (오른손)
+    const rodC = { bamboo: '#c9a55a', standard: '#1a1c20', premium: '#14306a' }[look.rod] || '#1a1d22';
+    const rodM = new THREE.MeshPhysicalMaterial({ color: rodC, roughness: 0.25, clearcoat: 0.8 });
+    this.rod = new THREE.Group();
+    this.rod.position.set(0.25, 0.44, 0.12);
+    this.root.add(this.rod);
+    add(this.rod, new THREE.CylinderGeometry(0.01, 0.017, 1.4, 8), rodM, 0, 0.45, 0);
+    add(this.rod, new THREE.CylinderGeometry(0.022, 0.022, 0.25, 10), toy('#3a2a20', 0.8), 0, 0.05, 0);
+    const reel = add(this.rod, new THREE.CylinderGeometry(0.045, 0.045, 0.05, 16), toy({ basic: '#8f979f', ultegra: '#cfd6dc', stella: '#d9c27a', vanquish: '#3b4f7a' }[look.reel] || '#b9c2cc', 0.25), 0.05, 0.22, 0);
+    reel.rotation.z = Math.PI / 2;
+    this.rodTipSeg = new THREE.Group();
+    this.rodTipSeg.position.y = 1.15;
+    this.rod.add(this.rodTipSeg);
+    add(this.rodTipSeg, new THREE.CylinderGeometry(0.003, 0.009, 1.5, 6), rodM, 0, 0.75, 0);
+    this.tip = new THREE.Object3D();
+    this.tip.position.y = 1.5;
+    this.rodTipSeg.add(this.tip);
+
+    if (M) {
+      // 모델: 낚싯대를 오른손에 쥔다
+      const s2 = M.scale, pv = M.pivots.armR, h = M.hand;
+      this.root.remove(this.rod);
+      this.arms[1].add(this.rod);
+      this.rod.position.set((h.x - pv.x) * s2, (h.y - pv.y) * s2 - 0.03, (h.z - pv.z) * s2 + 0.04);
+      this.rodOnArm = true;
+    }
+    this.setName(name);
+  }
+
+  // 직접 디자인한 3D 모델로 몸을 만든다 (부위별로 나뉘어 움직임)
+  buildModel(M) {
+    const root = (this.root = new THREE.Group());
+    this.group.add(root);
+    const s = M.scale;
+    const mk = (part) => {
+      const g = new THREE.Group();
+      const pv = M.pivots[part];
+      g.position.set(pv.x * s, (pv.y - M.minY) * s, pv.z * s);
+      root.add(g);
+      for (const { geo, mat, lens } of M.parts[part] || []) {
+        const mm = lens ? (this.lensM = mat.clone()) : mat;
+        const mesh = new THREE.Mesh(geo, mm);
+        mesh.scale.setScalar(s);
+        mesh.castShadow = true;
+        mesh.receiveShadow = part === 'body';
+        g.add(mesh);
+      }
+      return g;
+    };
+    mk('body');
+    this.head = mk('head');
+    this.arms = [mk('armL'), mk('armR')];
+    this.legs = [mk('legL'), mk('legR')];
+    this.eyes = []; // 이미 웃으며 감은 눈
+    if (!this.lensM) this.lensM = new THREE.MeshStandardMaterial({ color: '#f4f1e6' });
+    this.lensM.emissive = new THREE.Color('#fff1c4');
+    const lamp = (this.lampG = new THREE.Group());
+    const hp = M.pivots.head, L = M.lamp;
+    lamp.position.set((L.x - hp.x) * s, (L.y - hp.y) * s, (L.z - hp.z) * s);
+    this.head.add(lamp);
+    this.makeBeam(lamp);
+  }
+
+  // 헤드랜턴 빛줄기 + 겨냥점
+  makeBeam(lamp) {
     // 빛줄기 (밤에만)
     const beamG = new THREE.Group();
     beamG.rotation.x = 0.32;
@@ -212,27 +288,6 @@ export class Avatar {
     this.lampDir = new THREE.Object3D(); // 빛이 향하는 곳 (스포트라이트 겨냥)
     this.lampDir.position.set(0, 0, 6);
     beamG.add(this.lampDir);
-    this.setLamp(false);
-
-    // 낚싯대 (오른손)
-    const rodC = { bamboo: '#c9a55a', standard: '#1a1c20', premium: '#14306a' }[look.rod] || '#1a1d22';
-    const rodM = new THREE.MeshPhysicalMaterial({ color: rodC, roughness: 0.25, clearcoat: 0.8 });
-    this.rod = new THREE.Group();
-    this.rod.position.set(0.25, 0.44, 0.12);
-    root.add(this.rod);
-    add(this.rod, new THREE.CylinderGeometry(0.01, 0.017, 1.4, 8), rodM, 0, 0.45, 0);
-    add(this.rod, new THREE.CylinderGeometry(0.022, 0.022, 0.25, 10), toy('#3a2a20', 0.8), 0, 0.05, 0);
-    const reel = add(this.rod, new THREE.CylinderGeometry(0.045, 0.045, 0.05, 16), toy({ basic: '#8f979f', ultegra: '#cfd6dc', stella: '#d9c27a', vanquish: '#3b4f7a' }[look.reel] || '#b9c2cc', 0.25), 0.05, 0.22, 0);
-    reel.rotation.z = Math.PI / 2;
-    this.rodTipSeg = new THREE.Group();
-    this.rodTipSeg.position.y = 1.15;
-    this.rod.add(this.rodTipSeg);
-    add(this.rodTipSeg, new THREE.CylinderGeometry(0.003, 0.009, 1.5, 6), rodM, 0, 0.75, 0);
-    this.tip = new THREE.Object3D();
-    this.tip.position.y = 1.5;
-    this.rodTipSeg.add(this.tip);
-
-    this.setName(name);
   }
 
   // 헤드랜턴 켜기/끄기
@@ -297,6 +352,7 @@ export class Avatar {
     this.rod.visible = !noRod;
     this.arms[1].rotation.x = noRod ? sw * 0.6 : -0.9;
     this.rod.rotation.x = Math.PI / 2 - rodE;
+    if (this.rodOnArm) this.rod.rotation.x -= this.arms[1].rotation.x;
     this.rodTipSeg.rotation.x = bend * 0.8;
     // 눈 깜빡임
     const blink = (t % 4.2) < 0.12 ? 0.15 : 1;
@@ -372,7 +428,7 @@ export class AvatarPreview {
   }
 
   render(t, look) {
-    const key = JSON.stringify(look);
+    const key = JSON.stringify(look) + Avatar.ver;
     if (key !== this.key) {
       this.key = key;
       if (this.av) this.scene.remove(this.av.group);
@@ -386,3 +442,6 @@ export class AvatarPreview {
     this.renderer.render(this.scene, this.camera);
   }
 }
+
+// 디자인 모델 미리 불러오기
+loadAvatarModels().then((m) => { if (m && Object.keys(m).length) { Avatar.models = m; Avatar.ver++; } });
