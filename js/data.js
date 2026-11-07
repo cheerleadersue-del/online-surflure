@@ -140,7 +140,7 @@ export const METHODS = {
 // 게임 속 어종 (가상 조과)
 // 게임에 나오는 물고기는 직접 그린 22종만 — 바다 18종 / 민물 4종
 export const SEA_FISH = ['대방어', '알방어', '부시리', '대삼치', '고등어', '전갱이', '풀치', '농어', '양태', '감성돔', '황어', '대광어', '우럭', '돌우럭', '문어', '쭈꾸미', '갑오징어', '무늬오징어', '도다리'];
-export const FRESH_FISH = ['쏘가리', '꺽지', '배스', '강준치', '메기'];
+export const FRESH_FISH = ['쏘가리', '꺽지', '배스', '강준치', '메기', '황금쏘가리']; // 황금쏘가리: 민물 1% 확률
 export const FISH = {
   lure: {
     east: [['대광어', 35, 80], ['양태', 30, 60], ['황어', 30, 50], ['대삼치', 50, 95], ['알방어', 35, 60], ['대방어', 65, 105], ['부시리', 60, 110], ['농어', 40, 85], ['고등어', 25, 45], ['전갱이', 18, 35], ['풀치', 50, 85]],
@@ -165,7 +165,7 @@ export const FISH = {
 const FISH_IMG_KEY = {
   대방어: 'yellowtail_l', 알방어: 'yellowtail_s', 부시리: 'amberjack', 대삼치: 'spanish_mackerel', 고등어: 'mackerel', 배스: 'bass',
   쏘가리: 'mandarin_fish', 강준치: 'skygazer', 쭈꾸미: 'webfoot_octopus', 주꾸미: 'webfoot_octopus', 갑오징어: 'cuttlefish', 무늬오징어: 'bigfin_squid',
-  농어: 'seabass', 양태: 'flathead', 감성돔: 'black_seabream', 황어: 'dace', 대광어: 'flounder', 광어: 'flounder', 도다리: 'dodari',
+  농어: 'seabass', 양태: 'flathead', 감성돔: 'black_seabream', 황어: 'dace', 대광어: 'flounder', 광어: 'flounder', 도다리: 'dodari', 메기: 'catfish', 황금쏘가리: 'golden_mandarin',
   꺽지: 'kkeokji', 문어: 'octopus', 풀치: 'hairtail', 우럭: 'rockfish', 돌우럭: 'stone_rockfish', 볼락: 'stone_rockfish', 전갱이: 'horse_mackerel',
   삼치: 'spanish_mackerel', '방어(새끼)': 'yellowtail_s', 방어: 'yellowtail_l',
 };
@@ -221,4 +221,4 @@ export const DEFAULT_AVATAR = {
 
 // 라인별 랭킹 대상 어종 (없으면 모든 어종). 대상이 아니면 '잡어'
 export const RANK_TARGET = { sogari: '쏘가리', bass: '배스' };
-export const isRankFish = (line, name) => !RANK_TARGET[line] || name === RANK_TARGET[line];
+export const isRankFish = (line, name) => !RANK_TARGET[line] || name === RANK_TARGET[line] || (RANK_TARGET[line] === '쏘가리' && name === '황금쏘가리');
