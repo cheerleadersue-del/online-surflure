@@ -440,7 +440,7 @@ export class AvatarPreview {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     // 좁은 화면에서도 옆 캐릭터가 살짝 보이게
-    this.camera.position.z = w / h < 1.2 ? 5.2 : 4.4;
+    this.camera.position.z = w / h < 1.2 ? 5.0 : 4.3;
     this.camera.updateProjectionMatrix();
   }
 
