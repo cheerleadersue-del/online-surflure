@@ -37,9 +37,11 @@
         <div class="sheet-handle" aria-hidden="true"></div>
         <div class="sec-head"><h2>캐릭터</h2><span class="sec-more" id="char-count">1 / 3</span></div>
         <div class="carousel" id="hero">
-          <div class="c-card left" aria-hidden="true"></div>
-          <div class="c-card right" aria-hidden="true"></div>
-          <div class="c-card center" aria-hidden="true"></div>
+          <div class="c-track" id="char-track">
+            <button class="c-card basic" data-o="basic" type="button" aria-label="캐주얼"></button>
+            <button class="c-card boots" data-o="boots" type="button" aria-label="탐험가"></button>
+            <button class="c-card wader" data-o="wader" type="button" aria-label="작업복"></button>
+          </div>
           <canvas id="avatar-preview" width="420" height="320" aria-label="캐릭터 미리보기"></canvas>
         </div>
         <p class="cast-note">작업복에 따라 비거리가 달라져요</p>

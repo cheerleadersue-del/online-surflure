@@ -12,6 +12,7 @@ export class Avatar {
   static assets = null;
   static models = null; // 직접 디자인한 3D 모델 (불러오면 ver가 올라간다)
   static ver = 0;
+  static loading = true; // 디자인 모델을 불러오는 중
 
   constructor(look, name, { small = false } = {}) {
     this.group = new THREE.Group();
@@ -49,6 +50,7 @@ export class Avatar {
     const cap = (r, l) => new THREE.CapsuleGeometry(r, l, 6, 14);
 
     const M = Avatar.models && Avatar.models[kind];
+    this.waiting = !M && Avatar.loading; // 디자인 모델을 기다리는 중 (임시 아바타를 보이지 않게)
     if (M) this.buildModel(M);
     else {
     // 몸 전체를 흔들기 위한 뿌리
@@ -229,11 +231,14 @@ export class Avatar {
       this.rod.position.set((h.x - pv.x) * s2, (h.y - pv.y) * s2 - 0.03, (h.z - pv.z) * s2 + 0.04);
       this.rodOnArm = true;
     }
+    if (this.waiting) this.root.visible = false;
     this.setName(name);
+    if (this.waiting && this.nameSprite) this.nameSprite.visible = false;
   }
 
   // 직접 디자인한 3D 모델로 몸을 만든다 (부위별로 나뉘어 움직임)
   buildModel(M) {
+    this.isModel = true;
     const root = (this.root = new THREE.Group());
     this.group.add(root);
     const s = M.scale;
@@ -379,12 +384,13 @@ export class Avatar {
       // 꾸벅 인사
       this.root.rotation.x = Math.sin(Math.min(1, at / 1.4) * Math.PI) * 0.45;
     } else if (a === 'wave') {
-      L.rotation.z = -2.5 + Math.sin(t * 12) * 0.35;
-      L.rotation.x = 0;
+      // 디자인 모델은 팔이 비스듬히 벌어져 있고 머리가 커서, 옆으로 들어 흔든다 (머리 속으로 파묻히지 않게)
+      L.rotation.z = this.isModel ? -1.5 + Math.sin(t * 12) * 0.25 : -2.5 + Math.sin(t * 12) * 0.35;
+      L.rotation.x = this.isModel ? -0.25 : 0;
     } else if (a === 'highfive') {
-      L.rotation.x = -2.8;
-      L.rotation.z = -0.3;
-      if (at > 0.6 && at < 0.9) L.rotation.x = -2.4;
+      L.rotation.x = this.isModel ? -2.3 : -2.8;
+      L.rotation.z = this.isModel ? -0.6 : -0.3;
+      if (at > 0.6 && at < 0.9) L.rotation.x = this.isModel ? -2.0 : -2.4;
     } else if (a === 'sit' || a === 'castle') {
       this.root.position.y = -0.2;
       this.legs[0].rotation.x = -1.45;
@@ -424,10 +430,8 @@ export class AvatarPreview {
     const rim = new THREE.DirectionalLight('#ffffff', 1.2);
     rim.position.set(-3, 2, -2);
     this.scene.add(rim);
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.12, depthWrite: false }));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0.005;
-    this.scene.add(ground);
+    this.shadowGeo = new THREE.CircleGeometry(0.42, 32);
+    this.shadowMat = new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.12, depthWrite: false });
     this.key = '';
     this.avs = [];
     this.w = 0; this.h = 0;
@@ -444,33 +448,52 @@ export class AvatarPreview {
     this.camera.updateProjectionMatrix();
   }
 
-  // look: 가운데, sides: [왼쪽, 오른쪽] (없으면 가운데만)
-  render(t, look, sides = []) {
+  // 화면 위 가로 위치(px, 가운데 기준) → 3D 위치
+  pxToWorld(px) {
+    const h = this.h || 300;
+    const unit = h / (2 * this.camera.position.z * Math.tan((this.camera.fov * Math.PI) / 360));
+    return px / unit;
+  }
+
+  // items: [{ look, px(가운데 기준 가로 위치), scale, active }]
+  render(t, items) {
     this.fit();
-    const key = JSON.stringify([look, sides]) + Avatar.ver;
+    const key = JSON.stringify(items.map((it) => it.look)) + Avatar.ver;
     if (key !== this.key) {
       this.key = key;
       this.avs.forEach((a) => this.scene.remove(a.group));
-      this.avs = [look, ...sides].map((lk, i) => {
-        const a = new Avatar(lk, i === 0 ? (lk.name || '') : '');
+      this.avs = items.map((it) => {
+        const a = new Avatar(it.look, '');
+        // 캐릭터마다 발밑 그림자 (카드와 함께 움직인다)
+        const sh = new THREE.Mesh(this.shadowGeo, this.shadowMat);
+        sh.rotation.x = -Math.PI / 2;
+        sh.position.y = 0.005;
+        sh.visible = !a.waiting;
+        a.group.add(sh);
         this.scene.add(a.group);
         return a;
       });
     }
-    const [c, l, r] = this.avs;
-    c.pose({ walking: false, phase: 0, rodE: 1.3, t, action: (t % 9) > 7.2 ? 'wave' : null, actionT: (t % 9) - 7.2 });
-    c.group.rotation.y = Math.sin(t * 0.5) * 0.7;
-    c.group.position.set(0, c.bob, 0);
-    [[l, -1], [r, 1]].forEach(([a, s]) => {
-      if (!a) return;
-      a.pose({ walking: false, phase: 0, noRod: true, t: t + s });
-      a.group.position.set(s * 1.75, 0, -0.9);
-      a.group.rotation.y = -s * 0.55;
-      a.group.scale.setScalar(0.85);
+    items.forEach((it, i) => {
+      const a = this.avs[i];
+      const x = this.pxToWorld(it.px);
+      a.group.visible = Math.abs(x) < 4;
+      if (!a.group.visible) return;
+      const k = it.active;
+      a.pose({ walking: false, phase: 0, rodE: 1.3, noRod: !k, t: t + i, action: k && (t % 9) > 7.2 ? 'wave' : null, actionT: (t % 9) - 7.2 });
+      a.group.position.set(x, a.bob, 0);
+      a.group.rotation.y = k ? Math.sin(t * 0.5) * 0.6 : -Math.sign(x) * 0.45;
+      a.group.scale.setScalar(it.scale);
     });
     this.renderer.render(this.scene, this.camera);
   }
 }
 
 // 디자인 모델 미리 불러오기
-loadAvatarModels().then((m) => { if (m && Object.keys(m).length) { Avatar.models = m; Avatar.ver++; } });
+loadAvatarModels().then((m) => {
+  if (m && Object.keys(m).length) Avatar.models = m;
+}).finally(() => {
+  // 성공하면 디자인 모델로, 실패하면 임시 아바타라도 보이게 다시 만든다
+  Avatar.loading = false;
+  Avatar.ver++;
+});

@@ -436,12 +436,6 @@ body.fpv #fish-main { padding: 10px; font-size: 0.9rem; }
 .sec-head h2 { margin: 0; font-size: 1.12rem; font-weight: 800; color: #1b2440; }
 .sec-more { font-size: 0.8rem; color: var(--blue); font-weight: 600; }
 .carousel { position: relative; height: 300px; margin: 0 -18px; touch-action: pan-y; overflow: hidden; }
-.c-card { position: absolute; bottom: 22px; border-radius: 30px; transition: background 0.4s; }
-.c-card.center { left: 50%; width: 46%; height: 62%; transform: translateX(-50%);
-  background: linear-gradient(170deg, var(--c-center), var(--c-center-2)); box-shadow: 0 16px 30px rgba(255, 138, 31, 0.28), inset 0 -10px 24px rgba(0, 0, 0, 0.06); }
-.c-card.left, .c-card.right { width: 26%; height: 50%; opacity: 0.95; }
-.c-card.left { left: -8%; background: linear-gradient(170deg, var(--c-left), color-mix(in srgb, var(--c-left) 70%, #000 8%)); }
-.c-card.right { right: -8%; background: linear-gradient(170deg, var(--c-right), color-mix(in srgb, var(--c-right) 70%, #000 8%)); }
 #avatar-preview { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hero-nav { position: absolute; top: 58%; transform: translateY(-50%); width: 38px; height: 38px; border-radius: 50%; border: 0; z-index: 2;
   background: #fff; color: var(--blue); font-size: 1.5rem; font-weight: 700; line-height: 1; display: grid; place-items: center; box-shadow: 0 6px 16px rgba(20, 40, 120, 0.18); }
@@ -497,7 +491,17 @@ body.fpv #fish-main { padding: 10px; font-size: 0.9rem; }
 .cta:disabled::after { background: #e3e7f2; color: #aab1c5; box-shadow: none; }
 .entry .fine { text-align: center; color: #9aa1b5; font-size: 0.76rem; margin: 12px 0 0; }
 @media (min-width: 700px) { .entry-card { padding-top: 16px; } .sheet { border-radius: 34px; margin-bottom: 24px; } }
-.carousel { cursor: pointer; }
 .cast-note { margin: 6px 0 0; text-align: center; font-size: 1.12rem; font-weight: 800; color: #1b2440; letter-spacing: -0.01em; }
 .cast-chip { margin: 8px auto 0; width: fit-content; padding: 6px 14px; border-radius: 999px; background: #e9edfb; color: var(--blue); font-size: 0.8rem; font-weight: 700; }
 .cast-chip b { letter-spacing: 2px; margin-left: 4px; color: #ffb000; }
+/* 캐릭터 카드: 장비 배너처럼 손가락을 따라 미끄러지고 가운데에 착 멈춘다 */
+.carousel { container-type: inline-size; }
+.c-track { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 14px; padding: 0 27cqw 22px; overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.c-track::-webkit-scrollbar { display: none; }
+.c-card { flex: 0 0 46cqw; height: 62%; border: 0; border-radius: 30px; scroll-snap-align: center; scroll-snap-stop: always; cursor: pointer;
+  transform-origin: 50% 100%; box-shadow: 0 14px 28px rgba(30, 50, 140, 0.16), inset 0 -10px 24px rgba(0, 0, 0, 0.06); }
+.c-card.basic { background: linear-gradient(170deg, #ffb04a, #ff8a1f); }
+.c-card.boots { background: linear-gradient(170deg, #7ec8ff, #3b8ff0); }
+.c-card.wader { background: linear-gradient(170deg, #c7a6ff, #8b6cf0); }
+#avatar-preview { pointer-events: none; }
