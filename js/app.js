@@ -4,6 +4,7 @@ import {
   POINTS, POINT_TYPE_NAME, findPoint, GEAR, gearOf, DEFAULT_GEAR,
 } from './data.js';
 import * as DATA from './data.js';
+const { RANK_TARGET, isRankFish } = DATA;
 import { Records } from './records.js';
 import { smooth, hashStr } from './scene.js';
 import { World } from './scene3d.js';
@@ -209,7 +210,7 @@ function enterSea() {
     setTimeout(() => { $('#walk-hint').hidden = true; }, 9000);
     fishing.reset();
     $('#hud-line').textContent = `${LINES[st.line].name} · ${POINT_TYPE_NAME[st.point.type]}`;
-    $('#rank-point').textContent = st.point.name;
+    $('#rank-point').textContent = st.point.name + (RANK_TARGET[st.line] ? ` ${RANK_TARGET[st.line]}` : '');
     showBanner(st.point.name, st.point.desc);
     st.flags = [];
     rankSig = '';
@@ -449,8 +450,9 @@ function showCatch(f) {
   setTimeout(() => openCatchDialog(f), 2600);
 }
 function openCatchDialog(f) {
-  $('#c-title').textContent = `${f.name} ${f.size}cm!`;
-  $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${st.point ? st.point.name : ''} · ${timeSlot(nowDate())}\n랭킹에 기록됐어요. 물고기를 놓아줄까요?`;
+  const counted = isRankFish(st.line, f.name);
+  $('#c-title').textContent = counted ? `${f.name} ${f.size}cm!` : `${f.name} ${f.size}cm (잡어)`;
+  $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${st.point ? st.point.name : ''} · ${timeSlot(nowDate())}\n${counted ? '랭킹에 기록됐어요.' : `${RANK_TARGET[st.line]}만 랭킹에 올라가요.`} 물고기를 놓아줄까요?`;
   $('#dlg-catch').showModal();
 }
 // 방생: 쪼그려 앉아 두 손으로 물고기를 물로 돌려보낸다
@@ -931,7 +933,7 @@ const todayISO = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.
 let rankSig = '';
 async function refreshRank() {
   if (!st.point) return [];
-  const top = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3 });
+  const top = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3, species: RANK_TARGET[st.line] || null });
   const sig = top.map((r) => `${r.name}|${r.size}|${r.species}`).join(',');
   if (sig === rankSig) return top;
   rankSig = sig;
@@ -952,7 +954,12 @@ records.on((point) => { if (st.playing && st.point && (!point || point === st.po
 setInterval(() => { if (st.playing) refreshRank(); }, 20000);
 async function submitRecord(f) {
   if (!st.point) return;
-  const before = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3 });
+  if (!isRankFish(st.line, f.name)) {
+    // 대상 어종이 아니면 잡어: 랭킹에 올리지 않는다
+    setTimeout(() => toast(`🐟 ${f.name}는 잡어예요 — 이 방은 ${RANK_TARGET[st.line]}만 랭킹에 올라가요`), 1200);
+    return;
+  }
+  const before = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3, species: RANK_TARGET[st.line] || null });
   await records.submit(st.point.id, st.look.name, f.name, f.size);
   rankSig = '';
   const top = await refreshRank();
@@ -986,7 +993,7 @@ async function renderRankBoard() {
   const body = $('#rk-body');
   body.textContent = '';
   body.append(el('tr', {}, el('td', { colspan: '5', class: 'rk-empty', text: '불러오는 중…' })));
-  const rows = await records.ranking({ point: point || null, points: point ? null : POINTS[line].map((p) => p.id), since: periodSince(period), limit: 20 });
+  const rows = await records.ranking({ point: point || null, points: point ? null : POINTS[line].map((p) => p.id), since: periodSince(period), limit: 20, species: RANK_TARGET[line] || null });
   body.textContent = '';
   if (!rows.length) { body.append(el('tr', {}, el('td', { colspan: '5', class: 'rk-empty', text: '아직 기록이 없어요. 첫 기록의 주인공이 되어보세요!' }))); return; }
   const medal = ['🥇', '🥈', '🥉'];
@@ -999,7 +1006,7 @@ async function renderRankBoard() {
       el('td', { class: 'rk-pt', text: (findPoint(r.point) || {}).name || r.point }),
       el('td', { class: 'rk-d', text: isNaN(d) ? '' : `${d.getMonth() + 1}/${d.getDate()}` })));
   });
-  $('#rk-note').textContent = `${LINES[line].name} · ${point ? findPoint(point).name : '전체 포인트'} · ${RANK_PERIODS[period]} 최대어 순위 (아이디별 최고 기록)${records.mode === 'cloud' ? '' : ' — 서버 미연결: 이 기기 기록만 보여요'}`;
+  $('#rk-note').textContent = `${LINES[line].name} · ${point ? findPoint(point).name : '전체 포인트'} · ${RANK_PERIODS[period]} ${RANK_TARGET[line] ? `${RANK_TARGET[line]} ` : ''}최대어 순위 (아이디별 최고 기록${RANK_TARGET[line] ? `, ${RANK_TARGET[line]}만` : ''})${records.mode === 'cloud' ? '' : ' — 서버 미연결: 이 기기 기록만 보여요'}`;
 }
 function openRankBoard() {
   $('#rk-line').value = st.line || 'east';
