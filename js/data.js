@@ -105,16 +105,19 @@ export const findPoint = (id) => Object.values(POINTS).flat().find((p) => p.id =
 
 // 장비: 효과는 캐스팅 거리(cast) · 줄 강도(strong) · 감는 속도(speed) · 입질(bite) · 어종 선호(prefer)
 export const GEAR = {
+  // 루어대: cast(비거리) · strong(허리 힘)
   rod: [
-    { id: 'bamboo', name: '대나무', tag: '기본형', cast: 0.72, strong: 0.85 },
-    { id: 'standard', name: '보급형', tag: '카본 서프로드', cast: 0.88, strong: 1.0 },
-    { id: 'premium', name: '고급형', tag: '고탄성 서프로드', cast: 1.0, strong: 1.15 },
+    { id: 'ajido622m', name: '아지도 622M', tag: '라이트 루어대', cast: 0.8, strong: 0.92 },
+    { id: 'bottomslow992mh', name: '바텀슬로우 992MH', tag: '롱캐스팅·파워', cast: 1.0, strong: 1.2 },
+    { id: 'planb862ml', name: '플랜B 인쇼어 862ML', tag: '인쇼어 범용', cast: 0.93, strong: 1.02 },
+    { id: 'troy612', name: '트로이 612', tag: '숏로드·민물', cast: 0.74, strong: 0.98 },
   ],
+  // 릴: speed(감는 속도) · smooth(드랙 부드러움, 낮을수록 부드러움)
   reel: [
-    { id: 'basic', name: '기본형', tag: '스피닝릴', speed: 1.0, smooth: 1.0 },
-    { id: 'ultegra', name: '울테그라', tag: '원투·서프', speed: 1.12, smooth: 0.9 },
     { id: 'stella', name: '스텔라', tag: '최고급 스피닝', speed: 1.28, smooth: 0.72 },
-    { id: 'vanquish', name: '뱅퀴쉬', tag: '초경량 스피닝', speed: 1.3, smooth: 0.78 },
+    { id: 'vanford', name: '벤포드', tag: '경량 스피닝', speed: 1.22, smooth: 0.8 },
+    { id: 'ultegra', name: '울테그라', tag: '원투·서프', speed: 1.12, smooth: 0.9 },
+    { id: 'airity', name: '에어리티', tag: '초경량 스피닝', speed: 1.3, smooth: 0.76 },
   ],
   bait: [
     { id: 'basic', name: '기본형', tag: '갯지렁이', bite: 1.0, prefer: [] },
@@ -129,7 +132,7 @@ export const GEAR = {
   ],
 };
 export const gearOf = (kind, id) => GEAR[kind].find((g) => g.id === id) || GEAR[kind][0];
-export const DEFAULT_GEAR = { rod: 'bamboo', reel: 'basic', bait: 'basic', outfit: 'basic' };
+export const DEFAULT_GEAR = { rod: 'ajido622m', reel: 'stella', bait: 'basic', outfit: 'basic' };
 
 export const METHODS = {
   lure: { id: 'lure', name: '서프루어', icon: '🎣', desc: '던지고 감으며 입질을 유도' },
