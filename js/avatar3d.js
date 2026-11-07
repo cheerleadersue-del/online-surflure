@@ -204,7 +204,7 @@ export class Avatar {
     this.setLamp(false);
 
     // 낚싯대 (오른손)
-    const rodC = { ajido622m: '#1a1c20', bottomslow992mh: '#3a2418', planb862ml: '#14306a', troy612: '#5a1a22' }[look.rod] || '#1a1d22';
+    const rodC = { ajido622m: '#1a1c20', bottomslow992mh: '#3a2418', planb: '#14306a', inshore862ml: '#1f4f4a', troy612: '#5a1a22' }[look.rod] || '#1a1d22';
     const rodM = new THREE.MeshPhysicalMaterial({ color: rodC, roughness: 0.25, clearcoat: 0.8 });
     this.rod = new THREE.Group();
     this.rod.position.set(0.25, 0.44, 0.12);

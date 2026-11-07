@@ -109,7 +109,8 @@ export const GEAR = {
   rod: [
     { id: 'ajido622m', name: '아지도 622M', tag: '라이트 루어대', cast: 0.8, strong: 0.92 },
     { id: 'bottomslow992mh', name: '바텀슬로우 992MH', tag: '롱캐스팅·파워', cast: 1.0, strong: 1.2 },
-    { id: 'planb862ml', name: '플랜B 인쇼어 862ML', tag: '인쇼어 범용', cast: 0.93, strong: 1.02 },
+    { id: 'planb', name: '플랜B', tag: '서프 루어대', cast: 0.95, strong: 1.08 },
+    { id: 'inshore862ml', name: '인쇼어 862ML', tag: '인쇼어 범용', cast: 0.9, strong: 1.0 },
     { id: 'troy612', name: '트로이 612', tag: '숏로드·민물', cast: 0.74, strong: 0.98 },
   ],
   // 릴: speed(감는 속도) · smooth(드랙 부드러움, 낮을수록 부드러움)
