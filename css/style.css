@@ -478,9 +478,10 @@ body.fpv #fish-main { padding: 10px; font-size: 0.9rem; }
 .line-card.bass .lc-img { background: linear-gradient(160deg, #c3a6ff, #7d5ce6); }
 .line-card strong { font-size: 1rem; font-weight: 800; padding: 0 4px; }
 .lc-sub { font-size: 0.74rem; color: #9aa1b5; padding: 0 4px; }
-.line-card::after { content: '선택'; align-self: flex-end; margin-top: 8px; padding: 6px 14px; border-radius: 999px; background: #eef1fb; color: var(--blue); font-size: 0.78rem; font-weight: 700; }
+.line-card::after { content: '입장 →'; align-self: flex-end; margin-top: 8px; padding: 6px 14px; border-radius: 999px; background: #eef1fb; color: var(--blue); font-size: 0.78rem; font-weight: 700; }
 .line-card.on { box-shadow: 0 0 0 2px var(--blue), 0 10px 24px rgba(47, 79, 216, 0.22); }
-.line-card.on::after { content: '✓ 선택됨'; background: var(--blue); color: #fff; }
+.line-card.on::after { content: '입장 →'; background: var(--blue); color: #fff; }
+.line-card.busy::after { content: '입장 중…'; }
 .line-card:hover { transform: translateY(-2px); }
 .cta { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; margin: 20px 0 0; border: 0; border-radius: 999px;
   background: linear-gradient(180deg, #4766ee, var(--blue)); color: #fff; font-weight: 800; font-size: 1.05rem; padding: 17px 64px 17px 24px;
