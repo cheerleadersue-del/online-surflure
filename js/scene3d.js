@@ -2043,6 +2043,7 @@ export class World {
     this.updateViewModel(t, dt);
     this.updateBoils(t, dt, st);
     this.updateSpray(t, dt, ax, az);
+    this.updateTrophy(t, dt);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -2062,11 +2063,12 @@ export class World {
       const P = this.player;
       const eye = P.head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.05, 0));
       let flat;
-      if (this.landing && this.catchSpot) flat = this.catchSpot.clone().sub(eye);
+      if (this.trophy) flat = new THREE.Vector3(-Math.sin(this.orbit.yaw), 0, -Math.cos(this.orbit.yaw));
+      else if (this.landing && this.catchSpot) flat = this.catchSpot.clone().sub(eye);
       else if (this.fpTarget) flat = this.fpTarget.clone().sub(eye);
       else flat = new THREE.Vector3(-Math.sin(this.orbit.yaw), 0, -Math.cos(this.orbit.yaw));
       const hz = Math.hypot(flat.x, flat.z) || 1;
-      let pitch = this.landing ? Math.atan2(flat.y, hz) : Math.max(-0.35, Math.atan2(flat.y, hz)) * 0.5 - 0.08;
+      let pitch = this.trophy ? 0.02 : this.landing ? Math.atan2(flat.y, hz) : Math.max(-0.35, Math.atan2(flat.y, hz)) * 0.5 - 0.08;
       pitch += this.landing ? 0 : (this.vmLook || 0);
       const look = eye.clone().add(new THREE.Vector3(flat.x / hz * Math.cos(pitch), Math.sin(pitch), flat.z / hz * Math.cos(pitch)).multiplyScalar(10));
       const sh = this.shake || 0;
@@ -2310,7 +2312,7 @@ export class World {
   updateViewModel(t, dt) {
     const vm = this.vm;
     if (!vm) return;
-    vm.visible = !!this.fpv;
+    vm.visible = !!this.fpv && !this.trophy;
     if (!this.fpv) { this.vmCur = null; return; }
     // 해변 포인트의 모래 해변 구간이면 서프 스타일
     const onSand = !!this.player && !MODE.river && !MODE.sihwa && this.player.group.position.x < LAY.peb0;
@@ -2901,8 +2903,116 @@ export class World {
     clearTimeout(this.landingT);
     this.landingT = setTimeout(() => { this.landing = false; }, this.catchCamMs || 3000);
   }
+  // ── 잡은 물고기를 1인칭으로 크게: 줄에 매달려 흔들리고 팔딱이며 물방울이 떨어진다 ──
+  showTrophy(fish, url) {
+    this.clearTrophy();
+    const g = new THREE.Group();
+    g.userData = { born: performance.now(), size: fish.size || 40, ready: false };
+    this.camera.add(g);
+    this.trophy = g;
+    this.landing = true;
+    clearTimeout(this.landingT);
+    const tl = this.trophyLoader || (this.trophyLoader = new THREE.TextureLoader());
+    tl.load(url, (tex) => {
+      if (this.trophy !== g) return;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      const aspect = tex.image.width / tex.image.height;
+      // 화면 높이의 절반~70% 정도로 (큰 고기일수록 크게)
+      const vh = 2 * 1.3 * Math.tan(THREE.MathUtils.degToRad((this.portrait ? 92 : 78) / 2)); // 1인칭 화각, 거리 1.3에서 화면 높이
+      const L = vh * (0.6 + Math.min(0.2, (fish.size || 40) / 450));
+      const geo = new THREE.PlaneGeometry(L, L / aspect, 32, 4);
+      geo.rotateZ(-Math.PI / 2); // 머리(그림 왼쪽)가 위로
+      geo.translate(0, -L / 2, 0); // 위 끝(입)이 바늘
+      const uni = { uT: { value: 0 }, uA: { value: 0 } };
+      const mat = new THREE.MeshPhysicalMaterial({
+        map: tex, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.35, metalness: 0.08,
+        clearcoat: 0.9, clearcoatRoughness: 0.15, emissive: new THREE.Color('#ffffff'), emissiveMap: tex, emissiveIntensity: 0.22,
+      });
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uT = uni.uT; sh.uniforms.uA = uni.uA;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT, uA;')
+          .replace('#include <begin_vertex>', `#include <begin_vertex>
+            float k = clamp(-transformed.y / ${L.toFixed(3)}, 0.0, 1.0); // 0=머리, 1=꼬리
+            transformed.x += uA * sin(uT - k * 4.5) * k * k * ${(L * 0.22).toFixed(3)};
+            transformed.z += uA * cos(uT - k * 4.5) * k * k * ${(L * 0.08).toFixed(3)};`);
+      };
+      const fishMesh = new THREE.Mesh(geo, mat);
+      fishMesh.renderOrder = 30;
+      g.add(fishMesh);
+      // 위로 올라가는 낚싯줄
+      const line = new THREE.Mesh(new THREE.CylinderGeometry(0.0016, 0.0016, 3, 4), new THREE.MeshBasicMaterial({ color: '#d9f26a' }));
+      line.position.y = 1.5;
+      g.add(line);
+      // 떨어지는 물방울
+      const dropTex = TX.softDot('235,248,255');
+      const drops = [];
+      for (let i = 0; i < 26; i++) {
+        const d = new THREE.Sprite(new THREE.SpriteMaterial({ map: dropTex, transparent: true, depthWrite: false, opacity: 0 }));
+        d.userData = { life: 0 };
+        g.add(d);
+        drops.push(d);
+      }
+      Object.assign(g.userData, { fishMesh, uni, L, drops, ready: true, top: vh * 0.42 });
+    });
+  }
+
+  updateTrophy(t, dt) {
+    const g = this.trophy;
+    if (!g || !g.userData.ready) return;
+    const u = g.userData;
+    const age = (performance.now() - u.born) / 1000;
+    // 물에서 끌어올리는 등장(0.7초) → 흔들리며 매달림
+    const rise = Math.min(1, age / 0.7);
+    const ease = 1 - Math.pow(1 - rise, 3);
+    const dropK = u.dropT ? Math.min(1, (performance.now() - u.dropT) / 900) : 0;
+    g.position.set(0.02, lerp(-1.6, u.top, ease) - dropK * dropK * 2.6, -1.3);
+    const calm = Math.exp(-age * 0.25);
+    g.rotation.z = Math.sin(t * 2.1) * 0.13 * (0.4 + calm) + Math.sin(t * 7.3) * 0.02;
+    g.rotation.y = Math.sin(t * 1.2) * 0.4; // 천천히 돌며 양옆을 보여준다
+    g.rotation.x = Math.sin(t * 1.7) * 0.06;
+    // 팔딱: 1초에 한두 번 꼬리를 세게 친다
+    const flopPh = (t * 1.4) % 1;
+    const flop = flopPh < 0.35 ? Math.sin((flopPh / 0.35) * Math.PI) : 0;
+    u.uni.uT.value = t * 16;
+    u.uni.uA.value = (0.25 + flop * 1.1) * (0.5 + calm * 0.5);
+    u.fishMesh.position.x = flop * 0.03 * Math.sin(t * 20);
+    // 물방울
+    if (Math.random() < dt * 22 * (0.4 + calm)) {
+      const d = u.drops.find((x) => x.userData.life <= 0);
+      if (d) {
+        const k = Math.random();
+        d.position.set((Math.random() - 0.5) * 0.12, -k * u.L, 0.02);
+        d.userData = { life: 0.9, v: new THREE.Vector3((Math.random() - 0.5) * 0.2, -0.2, 0.05), s: 0.015 + Math.random() * 0.025 };
+      }
+    }
+    for (const d of u.drops) {
+      const du = d.userData;
+      if (du.life <= 0) { d.material.opacity = 0; continue; }
+      du.life -= dt;
+      du.v.y -= 3.2 * dt;
+      d.position.addScaledVector(du.v, dt);
+      d.scale.set(du.s, du.s * 1.6, 1);
+      d.material.opacity = Math.min(1, du.life * 2) * 0.9;
+    }
+    if (dropK >= 1) { this.clearTrophy(); this.landing = false; }
+  }
+
+  clearTrophy() {
+    if (!this.trophy) return;
+    this.camera.remove(this.trophy);
+    this.trophy.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    this.trophy = null;
+  }
+
   // 방생: 손에서 물로 포물선을 그리며 돌아간다
   releaseCatch() {
+    if (this.trophy) {
+      // 1인칭: 줄을 풀어 아래 물로 떨어뜨린다
+      this.trophy.userData.dropT = performance.now() + 250;
+      setTimeout(() => this.audioSplash && this.audioSplash(), 900);
+      return;
+    }
     const c = this.caught;
     if (!c) return;
     const b = c.userData.base;
@@ -2917,6 +3027,7 @@ export class World {
 
   clearCatch() {
     this.landing = false;
+    this.clearTrophy();
     if (this.caught) { this.scene.remove(this.caught); this.caught = null; }
     this.catchCamUntil = 0;
   }
