@@ -1073,7 +1073,7 @@ const friends = new Friends(records, {
   onInvite: (name, info) => {
     audio.ui();
     vibrate([80, 40, 80]);
-    notify(`🎣 ${name}님이 같이 낚시하자고 해요! (${info.pname || '포인트'})`, [
+    notify(`🎣 ${name}님: 동출 Go, Go~ (${info.pname || '포인트'})`, [
       ['같이 낚시하기', () => joinFriendAt(name, info), 'go'],
       ['닫기', null],
     ]);
