@@ -87,7 +87,7 @@
         <span id="hud-people" class="pill" title="지금 함께 있는 낚시꾼">👥 1명</span>
       </div>
       <button class="rank" id="rank" type="button" aria-expanded="false">
-        <span class="rank-title">🏆 <b id="rank-point">포인트</b> 접속자 랭킹 <small id="rank-count"></small></span>
+        <span class="rank-title">🏆 <b id="rank-point">포인트</b> 오늘의 랭킹 <small>전체 보기 ›</small></span>
         <ol id="rank-list"><li class="empty">아직 기록이 없어요. 첫 기록의 주인공이 되어보세요!</li></ol>
       </button>
       <select id="time-mode" aria-label="시간대">
@@ -103,6 +103,7 @@
     <nav class="hud-actions">
       <button id="btn-write" class="btn-primary" type="button">📸 조과 인증하기</button>
       <button id="btn-board" type="button">📋 조과 게시판</button>
+      <button id="btn-rank" type="button">🏆 랭킹</button>
       <button id="btn-chat" type="button">💬 채팅</button>
       <button id="btn-sound" type="button" aria-pressed="true">🔊</button>
       <button id="btn-home" type="button" title="처음으로">🏠</button>
@@ -227,6 +228,25 @@
   </dialog>
 
   <!-- ── 모달: 랜딩 성공 ── -->
+  <dialog id="dlg-rank" class="dlg wide">
+    <form method="dialog" class="dlg-close"><button aria-label="닫기">✕</button></form>
+    <h2 class="dlg-title">🏆 랭킹</h2>
+    <div class="board-filters">
+      <select id="rk-period" aria-label="기간">
+        <option value="today">오늘</option><option value="week">최근 7일</option><option value="month">최근 30일</option><option value="all">역대</option>
+      </select>
+      <select id="rk-line" aria-label="라인">
+        <option value="east">동해라인</option><option value="west">서해라인</option><option value="sogari">쏘가리 낚시</option><option value="bass">배스 낚시</option>
+      </select>
+      <select id="rk-point" aria-label="포인트"></select>
+    </div>
+    <p class="dlg-sub" id="rk-note"></p>
+    <table class="rk-table">
+      <thead><tr><th>순위</th><th>아이디</th><th>어종·크기</th><th>포인트</th><th>날짜</th></tr></thead>
+      <tbody id="rk-body"></tbody>
+    </table>
+  </dialog>
+
   <dialog id="dlg-catch" class="dlg small">
     <div class="catch-card">
       <div class="catch-burst">🎉</div>
