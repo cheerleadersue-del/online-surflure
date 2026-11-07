@@ -24,14 +24,14 @@ export const LINES = {
   },
   sogari: {
     id: 'sogari',
-    name: '쏘가리 낚시(임진강)',
+    name: '쏘가리 낚시',
     desc: '임진강 군남댐과 다리 아래 여울 명당. 쏘가리·꺽지·누치의 강.',
     spots: ['연천 군남댐', '연천 장남교', '연천 동이대교', '연천 임진교', '연천 북삼교', '연천 삼화교'],
     temps: [3, 4, 7, 12, 17, 21, 24, 25, 21, 15, 9, 4],
   },
   bass: {
     id: 'bass',
-    name: '배스 낚시(소양강)',
+    name: '배스 낚시',
     desc: '춘천 소양강의 잔잔한 물과 다리 기둥 주변. 배스·강준치·끄리.',
     spots: ['춘천 소양강 스카이워크', '춘천 소양2교', '춘천 소양강처녀상', '춘천 신매대교', '춘천 소양강댐 하류 세월교'],
     temps: [4, 5, 8, 13, 18, 22, 25, 26, 22, 16, 10, 5],
@@ -51,7 +51,7 @@ const RIVER_ZONES = [
   { id: 'riverbank', name: '강변', from: 2900, to: 10600, ground: 'pebble', fish: true, tip: '돌이 깔린 강변. 다리 기둥과 바위 주변을 노려보세요.' },
 ];
 const SIHWA_ZONES = [
-  { id: 'dike', name: '시화방조제', from: 2900, to: 10600, ground: 'concrete', fish: true, tip: '바깥은 서해, 안쪽은 시화호. 끝없이 곧은 방조제.' },
+  { id: 'dike', name: '방조제', from: 2900, to: 10600, ground: 'concrete', fish: true, tip: '바깥은 바다, 안쪽은 호수. 끝없이 곧은 방조제.' },
 ];
 export let ZONES = EAST_ZONES;
 export const isRiver = (point) => !!point && (point.type === 'bridge' || point.type === 'river');
@@ -64,19 +64,19 @@ export const BOAT_DOCK = 10100;
 // 접속자가 흩어지지 않게 라인마다 포인트 한 곳
 export const POINTS = {
   east: [
-    { id: 'gyeongpo', type: 'beach', name: '강릉 경포해수욕장', mark: 'pavilion', desc: '넓은 백사장과 언덕 위 정자' },
+    { id: 'gyeongpo', type: 'beach', name: '동해', mark: 'pavilion', desc: '넓은 백사장과 언덕 위 정자' },
   ],
   west: [
-    { id: 'sihwa', type: 'dike', name: '시화방조제', mark: 'moonTower', desc: '바다와 호수 사이 11km 방조제, 달 전망대' },
+    { id: 'sihwa', type: 'dike', name: '서해', mark: 'moonTower', desc: '바다와 호수 사이로 길게 뻗은 방조제' },
   ],
   sogari: [
-    { id: 'gunnam', type: 'bridge', name: '연천 군남댐', mark: 'dam', desc: '수문이 늘어선 댐 아래 거센 여울' },
+    { id: 'gunnam', type: 'bridge', name: '쏘가리 낚시', mark: 'dam', desc: '수문이 늘어선 댐 아래 거센 여울' },
   ],
   bass: [
-    { id: 'skywalk', type: 'river', name: '소양강 스카이워크', mark: 'riverSkywalk', desc: '강 위로 뻗은 유리 스카이워크' },
+    { id: 'skywalk', type: 'river', name: '배스 낚시', mark: 'riverSkywalk', desc: '강 위로 뻗은 유리 데크 아래 잔잔한 물' },
   ],
 };
-export const POINT_TYPE_NAME = { beach: '해수욕장', breakwater: '방파제', port: '항구', dike: '방조제', bridge: '임진강', river: '소양강' };
+export const POINT_TYPE_NAME = { beach: '해수욕장', breakwater: '방파제', port: '항구', dike: '방조제', bridge: '강', river: '강' };
 export const findPoint = (id) => Object.values(POINTS).flat().find((p) => p.id === id) || null;
 
 // 장비: 효과는 캐스팅 거리(cast) · 줄 강도(strong) · 감는 속도(speed) · 입질(bite) · 어종 선호(prefer)

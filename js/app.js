@@ -311,7 +311,7 @@ function enterSea() {
     $('#walk-hint').hidden = false;
     setTimeout(() => { $('#walk-hint').hidden = true; }, 9000);
     fishing.reset();
-    $('#hud-line').textContent = LINES[st.line].name.includes(POINT_TYPE_NAME[st.point.type]) ? LINES[st.line].name : `${LINES[st.line].name} · ${POINT_TYPE_NAME[st.point.type]}`;
+    $('#hud-line').textContent = '온라인 루어낚시';
     $('#rank-point').textContent = st.point.name + (RANK_TARGET[st.line] ? ` ${RANK_TARGET[st.line]}` : '');
     showBanner(st.point.name, st.point.desc);
     st.flags = [];
@@ -321,7 +321,7 @@ function enterSea() {
     refreshRank();
     history.replaceState(null, '', `?line=${st.line}&point=${st.point.id}`);
     net.connect(st.point.id, { name: st.look.name, look: st.look });
-    friends.setLocation(st.line, st.point.id, `${LINES[st.line].name} · ${st.point.name}`);
+    friends.setLocation(st.line, st.point.id, LINES[st.line].name);
     chatLog(`${st.point.name}에 도착했어요. 💬 채팅으로 인사해 보세요!`, 'sys');
     if (!DATA.isRiver(st.point)) setTimeout(() => toast('🕊️ 하늘 뷰로 보일링(물고기 떼)을 찾아보세요! 표시를 누르면 그 앞으로 이동해요'), 4200);
   });
