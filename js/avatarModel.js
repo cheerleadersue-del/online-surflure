@@ -13,7 +13,7 @@ export const MODEL_HEIGHT = 1.38; // 게임 속 키(m 단위, 기존 아바타�
 const ARM = new Set(['Sleeve', 'Sleeve cuff', 'Forearm', 'Mitten hand', 'Thumb']);
 const LEG = new Set(['Boot molded shaft', 'Rounded boot toe', 'Boot cuff', 'Boot outsole', 'Outsole lug', 'Bare calf', 'Foot', 'Toe',
   'Sandal sole', 'Sandal sidewall stripe', 'Wide sandal strap', 'Knee pad', 'Knee pad edge', 'Knee pad tread']);
-const baseName = (n) => String(n || '').replace(/\.\d+$/, '');
+const baseName = (n) => String(n || '').replace(/_/g, ' ').replace(/\.?\d{3}$/, '').trim(); // 불러올 때 띄어쓰기가 _로 바뀐다
 
 // 양자화된 속성을 일반 실수 배열로
 function toFloat(attr) {
@@ -64,7 +64,7 @@ function prepare(gltf) {
   // 바지 가랑이 높이: 가운데(x≈0)에서 가장 낮은 점
   let crotch = 1.0;
   for (const m of meshes) {
-    if (!/^Continuous/.test(m.name) && !/^Continuous/.test(m.parent && m.parent.name)) continue;
+    if (!/^Continuous/.test(baseName(m.name)) && !/^Continuous/.test(baseName(m.parent && m.parent.name))) continue;
     const g = plain(m.geometry, m.matrixWorld);
     const p = g.attributes.position;
     let lo = Infinity;
