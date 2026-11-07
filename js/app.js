@@ -125,6 +125,16 @@ function buildEntry() {
       audio.ui();
       renderPoints();
       validateEntry();
+      // 낚시터 배너를 누르면 바로 입장 (아이디가 없으면 아이디부터)
+      if ((st.look.name || '').trim().length < 2) {
+        const msg = $('#id-msg');
+        msg.textContent = '아이디를 먼저 입력해 주세요 (2자 이상)';
+        msg.className = 'id-msg bad';
+        $('#av-name').scrollIntoView({ block: 'center', behavior: 'smooth' });
+        $('#av-name').focus({ preventScroll: true });
+        return;
+      }
+      tryEnter();
     });
   });
   const nameIn = $('#av-name');
@@ -162,7 +172,14 @@ function validateEntry() {
   b.disabled = !ok;
   b.textContent = name.length < 2 ? '아이디를 입력하세요 (2자 이상)' : !st.line ? '낚시터를 선택하세요' : !st.point ? '낚시터를 선택하세요' : `${st.point.name} 입장하기`;
 }
+let entering = false;
 async function tryEnter() {
+  if (entering) return;
+  entering = true;
+  document.querySelectorAll('.line-card').forEach((x) => x.classList.toggle('busy', x.classList.contains('on')));
+  try { await tryEnterInner(); } finally { entering = false; document.querySelectorAll('.line-card').forEach((x) => x.classList.remove('busy')); }
+}
+async function tryEnterInner() {
   const b = $('#enter-btn');
   const msg = $('#id-msg');
   b.disabled = true;
