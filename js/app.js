@@ -57,6 +57,8 @@ const st = {
   hideAvatar: true,
   playing: false,
 };
+// 라인마다 포인트가 한 곳: 예전 포인트로 저장돼 있어도 그 라인의 포인트로
+if (st.line) st.point = POINTS[st.line][0];
 // 예전에 저장된 장비(없어진 것)는 기본값으로
 for (const k of Object.keys(GEAR)) if (!GEAR[k].some((g) => g.id === st.gear[k])) st.gear[k] = DEFAULT_GEAR[k];
 let creel = load('surflure.creel', []);
@@ -116,7 +118,7 @@ function buildEntry() {
     b.classList.toggle('on', b.dataset.line === st.line);
     b.addEventListener('click', () => {
       st.line = b.dataset.line;
-      if (!st.point || !POINTS[st.line].includes(st.point)) st.point = st.line === 'west' ? POINTS.west[0] : null;
+      st.point = POINTS[st.line][0]; // 라인마다 포인트 한 곳
       document.querySelectorAll('.line-card').forEach((x) => x.classList.toggle('on', x === b));
       audio.ui();
       renderPoints();
@@ -156,7 +158,7 @@ function validateEntry() {
   const ok = name.length >= 2 && !!st.line && !!st.point;
   const b = $('#enter-btn');
   b.disabled = !ok;
-  b.textContent = name.length < 2 ? '아이디를 입력하세요 (2자 이상)' : !st.line ? '라인을 선택하세요' : !st.point ? '포인트를 선택하세요' : `${st.point.name} 진입 🌊`;
+  b.textContent = name.length < 2 ? '아이디를 입력하세요 (2자 이상)' : !st.line ? '낚시터를 선택하세요' : !st.point ? '낚시터를 선택하세요' : `${st.point.name} 진입 🌊`;
 }
 async function tryEnter() {
   const b = $('#enter-btn');
@@ -222,7 +224,7 @@ function enterSea() {
     $('#walk-hint').hidden = false;
     setTimeout(() => { $('#walk-hint').hidden = true; }, 9000);
     fishing.reset();
-    $('#hud-line').textContent = `${LINES[st.line].name} · ${POINT_TYPE_NAME[st.point.type]}`;
+    $('#hud-line').textContent = LINES[st.line].name.includes(POINT_TYPE_NAME[st.point.type]) ? LINES[st.line].name : `${LINES[st.line].name} · ${POINT_TYPE_NAME[st.point.type]}`;
     $('#rank-point').textContent = st.point.name + (RANK_TARGET[st.line] ? ` ${RANK_TARGET[st.line]}` : '');
     showBanner(st.point.name, st.point.desc);
     st.flags = [];
@@ -1046,6 +1048,7 @@ function fillRankPoints() {
   sel.textContent = '';
   sel.append(el('option', { value: '', text: '전체 포인트' }));
   (POINTS[line] || []).forEach((p) => sel.append(el('option', { value: p.id, text: p.name })));
+  sel.hidden = (POINTS[line] || []).length <= 1;
   if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
 }
 async function renderRankBoard() {
