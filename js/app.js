@@ -109,11 +109,13 @@ function buildEntry() {
       type: 'button', class: st.gear[kind] === g.id ? 'on' : '',
       onclick: (e) => {
         st.gear[kind] = g.id; applyOutfit(); audio.ui();
+        if (kind === 'outfit') updateCharUI();
         [...box.children].forEach((c) => c.classList.toggle('on', c === e.currentTarget));
       },
     }, el('b', { text: g.name }), el('small', { text: g.tag }))));
   };
   ['rod', 'reel', 'bait', 'outfit'].forEach(gearSeg);
+  updateCharUI();
   document.querySelectorAll('.line-card').forEach((b) => {
     b.classList.toggle('on', b.dataset.line === st.line);
     b.addEventListener('click', () => {
@@ -158,7 +160,7 @@ function validateEntry() {
   const ok = name.length >= 2 && !!st.line && !!st.point;
   const b = $('#enter-btn');
   b.disabled = !ok;
-  b.textContent = name.length < 2 ? '아이디를 입력하세요 (2자 이상)' : !st.line ? '낚시터를 선택하세요' : !st.point ? '낚시터를 선택하세요' : `${st.point.name} 진입 🌊`;
+  b.textContent = name.length < 2 ? '아이디를 입력하세요 (2자 이상)' : !st.line ? '낚시터를 선택하세요' : !st.point ? '낚시터를 선택하세요' : `${st.point.name} 입장하기`;
 }
 async function tryEnter() {
   const b = $('#enter-btn');
@@ -179,10 +181,49 @@ async function tryEnter() {
   enterSea();
 }
 
+// 캐릭터(복장) 고르기: 좌우로 넘기는 카드
+const CHARS = {
+  basic: { name: 'CASUAL', desc: '흰 티셔츠 · 베이지 반바지 · 청록 샌들 — 가볍게 물가를 거닐어요' },
+  boots: { name: 'EXPLORER', desc: '청록 탐험 조끼 · 카고 반바지 · 장화 · 뒤쪽 뜰채' },
+  wader: { name: 'OVERALLS', desc: '청록 멜빵 작업복 · 무릎 패드 · 장화 — 깊은 물도 OK' },
+};
+const OUTFITS = GEAR.outfit.map((o) => o.id);
+const lookFor = (outfit) => {
+  const pants = outfit === 'wader' ? 'wader' : outfit === 'boots' ? 'jogger' : 'shorts';
+  return { ...st.look, name: '', pants, shoes: outfit === 'basic' ? 'slipper' : outfit === 'boots' ? 'knee' : 'wader', vest: outfit === 'boots' };
+};
+function stepChar(d) {
+  const i = (OUTFITS.indexOf(st.gear.outfit) + d + OUTFITS.length) % OUTFITS.length;
+  const b = $('#g-outfit').children[i];
+  if (b) b.click();
+}
+function updateCharUI() {
+  const o = st.gear.outfit;
+  $('#entry').dataset.char = o;
+  $('#char-name').textContent = CHARS[o].name;
+  $('#char-desc').textContent = CHARS[o].desc;
+  const dots = $('#char-dots');
+  if (dots.children.length !== OUTFITS.length) { dots.textContent = ''; OUTFITS.forEach(() => dots.append(el('i'))); }
+  [...dots.children].forEach((d, i) => d.classList.toggle('on', OUTFITS[i] === o));
+  const m = document.querySelector('meta[name=theme-color]');
+  if (m) m.content = getComputedStyle($('#entry')).getPropertyValue('--bg').trim() || '#0f2a44';
+}
+$('#char-prev').addEventListener('click', () => stepChar(-1));
+$('#char-next').addEventListener('click', () => stepChar(1));
+{
+  // 손가락으로 좌우 밀기
+  let sx = null;
+  const hero = $('#hero');
+  hero.addEventListener('pointerdown', (e) => { if (!e.target.closest('button')) sx = e.clientX; });
+  hero.addEventListener('pointerup', (e) => { if (sx == null) return; const dx = e.clientX - sx; sx = null; if (Math.abs(dx) > 40) stepChar(dx < 0 ? 1 : -1); });
+  hero.addEventListener('pointercancel', () => { sx = null; });
+}
 function drawPreview(t) {
   const c = $('#avatar-preview');
   if (!preview) preview = new AvatarPreview(c);
-  preview.render(t, st.look);
+  const i = OUTFITS.indexOf(st.gear.outfit);
+  const side = (d) => lookFor(OUTFITS[(i + d + OUTFITS.length) % OUTFITS.length]);
+  preview.render(t, st.look, [side(-1), side(1)]);
 }
 
 function enterSea() {

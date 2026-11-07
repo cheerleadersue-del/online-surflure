@@ -18,59 +18,69 @@
   <canvas id="world" aria-label="바다 장면"></canvas>
 
   <!-- ── 입장 화면 ── -->
-  <section id="entry" class="entry">
+  <section id="entry" class="entry" data-char="basic">
     <div class="entry-card">
-      <header class="brand">
-        <span class="brand-mark">〰️🎣</span>
-        <h1>온라인 서프루어낚시</h1>
-        <p>장비를 챙기고, 오늘의 포인트로.</p>
+      <header class="app-bar">
+        <span class="ab-icon" aria-hidden="true">☰</span>
+        <span class="ab-title" id="char-name">CASUAL</span>
+        <span class="ab-icon" aria-hidden="true">♥</span>
       </header>
 
-      <div class="step">
-        <h2><span class="num">1</span> 아이디</h2>
-        <div class="id-row">
-          <input id="av-name" maxlength="12" placeholder="2~12자, 다른 사람과 겹칠 수 없어요" autocomplete="nickname">
-          <span id="id-msg" class="id-msg" role="status"></span>
-        </div>
+      <!-- 캐릭터 고르기: 좌우로 넘기기 -->
+      <div class="hero" id="hero">
+        <div class="hero-glass" aria-hidden="true"></div>
+        <canvas id="avatar-preview" width="420" height="300" aria-label="캐릭터 미리보기"></canvas>
+        <button class="hero-nav prev" id="char-prev" type="button" aria-label="이전 캐릭터">‹</button>
+        <button class="hero-nav next" id="char-next" type="button" aria-label="다음 캐릭터">›</button>
+      </div>
+      <div class="dots" id="char-dots" aria-hidden="true"></div>
+      <div class="hero-text">
+        <p class="kicker">ONLINE SURF LURE</p>
+        <h1>ROLE CHOICE</h1>
+        <p class="hero-desc" id="char-desc">좌우로 넘겨 캐릭터를 골라요</p>
+      </div>
+      <div class="gear-seg" id="g-outfit" hidden></div>
+
+      <div class="id-pill">
+        <input id="av-name" maxlength="12" placeholder="아이디 (2~12자)" autocomplete="nickname" aria-label="아이디">
+        <span id="id-msg" class="id-msg" role="status"></span>
       </div>
 
-      <div class="step">
-        <h2><span class="num">2</span> 장비 세팅</h2>
-        <div class="avatar-grid">
-          <canvas id="avatar-preview" width="200" height="240" aria-label="아바타 미리보기"></canvas>
-          <div class="gear-opts">
-            <div class="gear-row"><span>🎣 루어대</span><div class="gear-seg" id="g-rod"></div></div>
-            <div class="gear-row"><span>⚙️ 릴</span><div class="gear-seg" id="g-reel"></div></div>
-            <div class="gear-row"><span>🪝 미끼</span><div class="gear-seg" id="g-bait"></div></div>
-            <div class="gear-row"><span>👕 복장</span><div class="gear-seg" id="g-outfit"></div></div>
-          </div>
-        </div>
-      </div>
+      <section class="props">
+        <h2>PROPS <small>장비</small></h2>
+        <div class="prop-row"><span class="prop-label">🎣 루어대</span><div class="gear-seg" id="g-rod"></div></div>
+        <div class="prop-row"><span class="prop-label">⚙️ 릴</span><div class="gear-seg" id="g-reel"></div></div>
+        <div class="prop-row"><span class="prop-label">🪝 미끼</span><div class="gear-seg" id="g-bait"></div></div>
+      </section>
 
-      <div class="step">
-        <h2><span class="num">3</span> 낚시터 선택</h2>
+      <section class="spots">
+        <h2>FISHING SPOT <small>낚시터</small></h2>
         <div class="line-cards">
           <button class="line-card east" data-line="east" type="button">
+            <i aria-hidden="true">🌊</i>
             <strong>동해</strong>
             <span>강릉 경포해수욕장</span>
           </button>
           <button class="line-card west" data-line="west" type="button">
+            <i aria-hidden="true">🌅</i>
             <strong>서해</strong>
             <span>시화방조제</span>
           </button>
           <button class="line-card sogari" data-line="sogari" type="button">
-            <strong>쏘가리 낚시(임진강)</strong>
-            <span>연천 군남댐</span>
+            <i aria-hidden="true">🐟</i>
+            <strong>쏘가리 낚시</strong>
+            <span>임진강 · 연천 군남댐</span>
           </button>
           <button class="line-card bass" data-line="bass" type="button">
-            <strong>배스 낚시(소양강)</strong>
-            <span>소양강 스카이워크</span>
+            <i aria-hidden="true">🎣</i>
+            <strong>배스 낚시</strong>
+            <span>소양강 · 스카이워크</span>
           </button>
         </div>
         <div class="point-list" id="point-list" hidden></div>
-      </div>
+      </section>
 
-      <button id="enter-btn" class="btn-primary big" type="button" disabled>포인트 진입 🌊</button>
+      <button id="enter-btn" class="cta" type="button" disabled>입장하기</button>
       <p class="fine">🔊 이어폰을 끼면 파도 소리와 드랙 소리가 더 실감 나요.</p>
     </div>
   </section>
