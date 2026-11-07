@@ -359,7 +359,8 @@ button { cursor: pointer; }
 .chat-feed li.sys { opacity: 0.85; font-size: 0.72rem; }
 .chat-feed li.old { opacity: 0; }
 .chat-bar { position: fixed; left: 50%; transform: translateX(-50%); top: 10px; z-index: 8; width: min(520px, calc(100vw - 16px)); display: flex; gap: 6px; background: rgba(10, 24, 40, 0.85); padding: 6px; border-radius: 999px; backdrop-filter: blur(6px); }
-.chat-bar input { flex: 1; min-width: 0; border: 0; border-radius: 999px; padding: 9px 13px; font-size: 16px; }
+.chat-bar input { flex: 1; min-width: 0; border: 0; border-radius: 999px; padding: 9px 13px; font-size: 16px; color: #12202f; background: #fff; caret-color: #f26b1d; -webkit-text-fill-color: #12202f; }
+.chat-bar input::placeholder { color: #8a94a3; -webkit-text-fill-color: #8a94a3; }
 .chat-bar button { border-radius: 999px; padding: 8px 14px; border: 0; }
 .chat-bar #chat-close { background: rgba(255, 255, 255, 0.18); color: #fff; padding: 8px 12px; }
 @media (max-width: 760px) {
