@@ -116,7 +116,7 @@ const LINE_STYLE = {
   east: {
     dry: C('#e8dcc0'), wet: C('#b5a07a'), under: C('#c9b98f'), deepFloor: C('#6f7a62'),
     rock: C('#b6a184'), mussel: C('#26231f'), detail: 'sand',
-    shallow: C('#2fb5b0'), deep: C('#0f5f9e'), fog: 0.0016,
+    shallow: C('#2fb2b6'), deep: C('#0c4f8f'), fog: 0.0016,
     zenith: C('#1d5fc4'), horizon: C('#9fcbef'),
   },
   river: {
@@ -218,6 +218,7 @@ export class World {
     this.buildFishingGear();
     this.buildViewModel();
     this.buildBoils();
+    this.buildSpray();
     scene.add(this.camera);
     this.depthTex.needsUpdate = true;
 
@@ -1945,7 +1946,8 @@ export class World {
       a.pose({ rodE: e, t: t + i });
       a.group.position.set(nx, n.Y, n.Z);
       a.group.rotation.y = Math.PI;
-      a.group.visible = true;
+      // 1인칭일 때 바로 옆 사람은 시야를 가리지 않게 숨긴다
+      a.group.visible = !(this.fpv && Math.hypot(nx - ax, n.Z - az) < 3.5);
       if (!a.line) {
         a.line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6 }));
         a.line.frustumCulled = false;
@@ -2038,6 +2040,7 @@ export class World {
     this.turbines.forEach((h, i) => { h.rotation.z = t * 0.6 + i; });
     this.updateViewModel(t, dt);
     this.updateBoils(t, dt, st);
+    this.updateSpray(t, dt, ax, az);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -2053,21 +2056,28 @@ export class World {
       return;
     }
     if (this.fpv && this.player) {
-      // 1인칭: 내 눈높이에서 걸린 물고기 쪽을 본다
+      // 1인칭(고프로 시점): 바다(루어) 쪽을 보고, 자세에 따라 시선이 위·아래로
       const P = this.player;
       const eye = P.head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.05, 0));
-      const fwd = new THREE.Vector3(0, 0, -1);
-      const tgt = this.fpTarget ? this.fpTarget.clone() : eye.clone().add(fwd.multiplyScalar(30)).add(new THREE.Vector3(0, -2.5, 0));
+      let flat;
+      if (this.landing && this.catchSpot) flat = this.catchSpot.clone().sub(eye);
+      else if (this.fpTarget) flat = this.fpTarget.clone().sub(eye);
+      else flat = new THREE.Vector3(-Math.sin(this.orbit.yaw), 0, -Math.cos(this.orbit.yaw));
+      const hz = Math.hypot(flat.x, flat.z) || 1;
+      let pitch = this.landing ? Math.atan2(flat.y, hz) : Math.max(-0.35, Math.atan2(flat.y, hz)) * 0.5 - 0.08;
+      pitch += this.landing ? 0 : (this.vmLook || 0);
+      const look = eye.clone().add(new THREE.Vector3(flat.x / hz * Math.cos(pitch), Math.sin(pitch), flat.z / hz * Math.cos(pitch)).multiplyScalar(10));
       const sh = this.shake || 0;
-      eye.x += (Math.random() - 0.5) * sh * 0.06; eye.y += (Math.random() - 0.5) * sh * 0.05;
+      eye.x += (Math.random() - 0.5) * sh * 0.05; eye.y += (Math.random() - 0.5) * sh * 0.04 + Math.sin(t * 1.6) * 0.008;
       cam.position.lerp(eye, Math.min(1, dt * 10));
-      this.camLook.lerp(tgt, Math.min(1, dt * 6));
+      this.camLook.lerp(look, Math.min(1, dt * 8));
       cam.lookAt(this.camLook);
-      cam.rotation.z += (Math.random() - 0.5) * sh * 0.02;
-      if (cam.fov !== 64) { cam.fov = 64; cam.updateProjectionMatrix(); }
+      cam.rotation.z += Math.sin(t * 0.7) * 0.012 + (Math.random() - 0.5) * sh * 0.02;
+      const fov = this.portrait ? 92 : 78;
+      if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); this.fpvFov = fov; }
       return;
     }
-    if (cam.fov === 64) { cam.fov = this.portrait ? 62 : 50; cam.updateProjectionMatrix(); }
+    if (this.fpvFov && cam.fov === this.fpvFov) { cam.fov = this.portrait ? 62 : 50; cam.updateProjectionMatrix(); this.fpvFov = 0; }
     const o = this.orbit;
     const k = Math.min(1, dt * 6);
     o.yaw += angDiff(o.tYaw, o.yaw) * k;
@@ -2109,122 +2119,308 @@ export class World {
     if (this.shake) cam.position.add(new THREE.Vector3((Math.random() - 0.5) * this.shake * 0.08, (Math.random() - 0.5) * this.shake * 0.06, 0));
   }
 
-  // ── 1인칭 뷰모델: 휘어지는 낚싯대 + 릴을 감는 손 ──
+  // ── 1인칭 뷰모델 (고프로 시점): 그립을 쥔 오른손, 릴 핸들을 돌리는 왼손, 휘어지는 낚싯대 ──
   buildViewModel() {
     const vm = (this.vm = new THREE.Group());
     vm.visible = false;
-    const skin = new THREE.MeshPhysicalMaterial({ color: '#f6d2b4', roughness: 0.55, clearcoat: 0.2 });
-    const sleeve = new THREE.MeshPhysicalMaterial({ color: '#f26b1d', roughness: 0.75, sheen: 0.5 });
-    this.vmRodMat = new THREE.MeshPhysicalMaterial({ color: '#15171a', roughness: 0.25, clearcoat: 0.9 });
-    // 손잡이(EVA 그립)
-    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.42, 12), new THREE.MeshStandardMaterial({ color: '#2b2b2b', roughness: 0.9 }));
-    grip.rotation.x = Math.PI / 2 - 0.75;
-    grip.position.set(0.2, -0.44, -1.0);
-    vm.add(grip);
-    // 오른손: 그립을 쥔 손 + 소매
-    const rh = new THREE.Group();
-    rh.position.set(0.21, -0.36, -1.08);
-    rh.add(new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 12), skin));
-    const rs = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.4, 6, 12), sleeve);
-    rs.position.set(0.12, -0.18, 0.18);
-    rs.rotation.set(0.9, 0, 0.55);
-    rh.add(rs);
-    vm.add(rh);
-    // 릴 (색은 장비에 따라) — 낚싯대 아래에 매달려 있다
+    const skin = new THREE.MeshPhysicalMaterial({ color: '#c98f68', roughness: 0.6, clearcoat: 0.15, sheen: 0.3, sheenColor: new THREE.Color('#ffd2b0') });
+    const sleeve = new THREE.MeshPhysicalMaterial({ color: '#f2f1ec', roughness: 0.9, sheen: 0.8, sheenColor: new THREE.Color('#ffffff') });
+    // 래쉬가드 메시 질감
+    {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#808080'; g.fillRect(0, 0, 128, 128);
+      g.fillStyle = '#5a5a5a';
+      for (let y = 0; y < 128; y += 6) for (let x = (y / 6) % 2 ? 3 : 0; x < 128; x += 6) { g.beginPath(); g.arc(x, y, 1.6, 0, Math.PI * 2); g.fill(); }
+      const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 6);
+      sleeve.bumpMap = t; sleeve.bumpScale = 0.8;
+    }
+    this.vmRodMat = new THREE.MeshPhysicalMaterial({ color: '#15171a', roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.15 });
+    this.vmReelMat = new THREE.MeshPhysicalMaterial({ color: '#1c1e22', metalness: 0.6, roughness: 0.3, clearcoat: 0.8 });
+    const gold = new THREE.MeshPhysicalMaterial({ color: '#c9a646', metalness: 0.9, roughness: 0.25 });
+    const lineM = new THREE.MeshStandardMaterial({ color: '#b6f23a', roughness: 0.6, emissive: '#4a6a00', emissiveIntensity: 0.25 });
+    const black = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.8 });
+    const add = (par, geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); par.add(m); return m; };
+
+    // 낚싯대 좌표계: +Y = 낚싯대 방향, +Z = 낚싯대 윗면, +X = 오른쪽
+    const rf = (this.vmRF = new THREE.Group());
+    vm.add(rf);
+    add(rf, new THREE.CylinderGeometry(0.017, 0.02, 0.38, 14), black, 0, -0.17, 0); // 뒷 그립(EVA)
+    add(rf, new THREE.CylinderGeometry(0.02, 0.02, 0.04, 14), gold, 0, -0.36, 0); // 버트 캡
+    add(rf, new THREE.CylinderGeometry(0.015, 0.016, 0.1, 14), this.vmRodMat, 0, 0.04, 0); // 릴 시트
+    add(rf, new THREE.CylinderGeometry(0.016, 0.013, 0.1, 14), black, 0, 0.12, 0); // 앞 그립
+    // 스피닝릴: 낚싯대 아래에 매달림
     const reel = (this.vmReel = new THREE.Group());
-    reel.position.set(0.2, -0.43, -1.13);
-    this.vmReelMat = new THREE.MeshPhysicalMaterial({ color: '#9aa3ad', metalness: 0.8, roughness: 0.25, clearcoat: 0.6 });
-    const spool = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.05, 20), this.vmReelMat);
-    spool.rotation.x = Math.PI / 2 - 0.75;
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10), this.vmReelMat);
-    body.position.set(-0.04, 0.01, 0.01);
-    reel.add(spool, body);
-    // 핸들 (회전) + 왼손
+    reel.position.set(0, 0.03, -0.0);
+    reel.scale.setScalar(1.3);
+    rf.add(reel);
+    add(reel, new THREE.BoxGeometry(0.012, 0.05, 0.06), this.vmReelMat, 0, 0, -0.035); // 다리
+    const body = add(reel, new THREE.SphereGeometry(0.038, 18, 14), this.vmReelMat, 0, -0.01, -0.085);
+    body.scale.set(0.8, 1.15, 1);
+    const spool = add(reel, new THREE.CylinderGeometry(0.034, 0.03, 0.045, 24), this.vmReelMat, 0, 0.055, -0.085);
+    add(reel, new THREE.CylinderGeometry(0.031, 0.031, 0.03, 24), lineM, 0, 0.058, -0.085); // 감긴 형광 합사
+    add(reel, new THREE.TorusGeometry(0.038, 0.0025, 6, 24), gold, 0, 0.065, -0.085).rotation.x = Math.PI / 2; // 베일
+    spool.castShadow = false;
+    // 핸들 (왼쪽, 감으면 회전)
     const crank = (this.vmCrank = new THREE.Group());
-    crank.position.set(-0.08, 0.01, 0.01);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.08, 0.01), this.vmReelMat);
-    arm.position.y = 0.04;
-    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.035, 10), new THREE.MeshStandardMaterial({ color: '#222' }));
-    knob.position.set(-0.02, 0.08, 0);
-    knob.rotation.z = Math.PI / 2;
-    const lh = new THREE.Group();
-    lh.position.set(-0.05, 0.08, 0);
-    lh.add(new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 12), skin));
-    const ls = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.4, 6, 12), sleeve);
-    ls.position.set(-0.16, -0.17, 0.18);
-    ls.rotation.set(0.9, 0, -0.75);
-    lh.add(ls);
-    crank.add(arm, knob, lh);
+    crank.position.set(-0.04, -0.005, -0.085);
     reel.add(crank);
-    vm.add(reel);
-    // 휘어지는 낚싯대(매 프레임 다시 만든다)
+    const arm = add(crank, new THREE.BoxGeometry(0.006, 0.075, 0.01), gold, -0.008, 0, 0.035);
+    arm.rotation.x = Math.PI / 2;
+    this.vmKnob = add(crank, new THREE.CylinderGeometry(0.011, 0.011, 0.03, 12), black, -0.022, 0, 0.072);
+    this.vmKnob.rotation.z = Math.PI / 2;
+    // 오른손: 릴 다리를 손가락 사이에 끼고 그립을 감싼다
+    const rh = (this.vmRH = new THREE.Group());
+    rh.position.set(0, -0.01, 0);
+    rf.add(rh);
+    const palm = add(rh, new THREE.SphereGeometry(0.042, 18, 14), skin, 0.022, -0.02, 0.012);
+    palm.scale.set(0.85, 1.35, 1.05);
+    for (let i = 0; i < 4; i++) {
+      const f = add(rh, new THREE.CapsuleGeometry(0.0115, 0.04, 4, 8), skin, -0.008, 0.02 - i * 0.022, -0.026);
+      f.rotation.set(0, 0, Math.PI / 2 - 0.2);
+    }
+    const thumb = add(rh, new THREE.CapsuleGeometry(0.012, 0.045, 4, 8), skin, 0.006, 0.06, 0.03);
+    thumb.rotation.set(0.5, 0, 0.2);
+    // 왼손
+    const lh = (this.vmLH = new THREE.Group());
+    vm.add(lh);
+    const lp = add(lh, new THREE.SphereGeometry(0.042, 18, 14), skin);
+    lp.scale.set(1.05, 0.8, 1.3);
+    for (let i = 0; i < 4; i++) {
+      const f = add(lh, new THREE.CapsuleGeometry(0.011, 0.035, 4, 8), skin, 0.03, 0.012, -0.03 + i * 0.02);
+      f.rotation.set(0, 0, -1.2);
+    }
+    // 소매 (손 → 화면 밖 어깨)
+    const sl = new THREE.CylinderGeometry(0.06, 0.075, 1, 16, 1, true);
+    sl.translate(0, 0.5, 0);
+    this.vmSleeveR = add(vm, sl, sleeve);
+    this.vmSleeveL = add(vm, sl.clone(), sleeve);
+    this.vmForeR = add(vm, new THREE.CylinderGeometry(0.03, 0.036, 1, 12, 1, true).translate(0, 0.5, 0), skin);
+    this.vmForeL = add(vm, new THREE.CylinderGeometry(0.03, 0.036, 1, 12, 1, true).translate(0, 0.5, 0), skin);
+    // 블랭크 (매 프레임 휨 계산)
     this.vmRod = new THREE.Mesh(new THREE.BufferGeometry(), this.vmRodMat);
     vm.add(this.vmRod);
+    this.vmGuides = [];
+    for (let i = 0; i < 6; i++) {
+      const g = new THREE.Mesh(new THREE.TorusGeometry(0.012 - i * 0.0014, 0.0018, 6, 14), gold);
+      vm.add(g);
+      this.vmGuides.push(g);
+    }
     this.vmTip = new THREE.Object3D();
     vm.add(this.vmTip);
-    vm.traverse((o) => { o.renderOrder = 20; if (o.material) { o.material.depthTest = true; } });
+    vm.traverse((o) => { if (o.isMesh) { o.renderOrder = 20; o.frustumCulled = false; } });
     this.camera.add(vm);
     this.crankAngle = 0;
+    this.vmCur = null;
   }
 
   setGearLook(gear) {
     if (!this.vmRodMat) return;
-    const rod = { bamboo: '#c9a55a', standard: '#1a1c20', premium: '#14306a' }[gear.rod] || '#15171a';
-    const reel = { basic: '#8f979f', ultegra: '#cfd6dc', stella: '#d9c27a', vanquish: '#3b4f7a' }[gear.reel] || '#9aa3ad';
+    const rod = { bamboo: '#b58a3a', standard: '#16181c', premium: '#10285c' }[gear.rod] || '#15171a';
+    const reel = { basic: '#5a6068', ultegra: '#2a2d33', stella: '#1d1d1f', vanquish: '#22324f' }[gear.reel] || '#1c1e22';
     this.vmRodMat.color.set(rod);
     this.vmReelMat.color.set(reel);
+  }
+
+  // 자세 키프레임 (카메라 좌표): 그립 위치 g, 낚싯대 앙각 pitch·좌우 yaw, 시선 올림 look
+  vmKey(name) {
+    const K = {
+      idle: { g: [0.02, -0.24, -0.46], pitch: 0.34, yaw: -0.2, look: 0 },
+      jerk: { g: [-0.02, 0.0, -0.44], pitch: 1.15, yaw: -0.08, look: 0.3 },
+      back: { g: [0.26, 0.12, -0.18], pitch: 2.15, yaw: 0.32, look: 0.26 },
+      ready: { g: [0.08, -0.16, -0.42], pitch: 0.75, yaw: 0.05, look: 0.05 },
+      release: { g: [0.0, -0.12, -0.6], pitch: 0.5, yaw: -0.1, look: 0.06 },
+      fight: { g: [0.0, -0.08, -0.42], pitch: 1.0, yaw: -0.12, look: 0.12 },
+      run: { g: [0.03, -0.18, -0.52], pitch: 0.6, yaw: -0.25, look: 0.02 },
+      land: { g: [0.24, 0.02, -0.38], pitch: 1.2, yaw: 0.55, look: -0.6 },
+      wait: { g: [0.03, -0.26, -0.46], pitch: 0.24, yaw: -0.18, look: -0.03 },
+    };
+    const k = K[name];
+    return { g: new THREE.Vector3(...k.g), pitch: k.pitch, yaw: k.yaw, look: k.look };
+  }
+  vmMix(a, b, k) {
+    return { g: a.g.clone().lerp(b.g, k), pitch: lerp(a.pitch, b.pitch, k), yaw: lerp(a.yaw, b.yaw, k), look: lerp(a.look, b.look, k) };
+  }
+
+  // 현재 상태에 맞는 목표 자세
+  vmTarget(t) {
+    const vp = this.vmPose || {};
+    const fi = this.fightInfo;
+    const s = vp.state;
+    if (this.landing) return this.vmKey('land');
+    if (s === 'charging') return this.vmMix(this.vmKey('ready'), this.vmKey('back'), Math.min(1, (vp.power || 0) * 1.6));
+    if (s === 'flying') {
+      // 0~0.18: 힘차게 앞으로 휘두름, 이후 루어가 날아가는 동안 그대로
+      const k = clamp((vp.k || 0) / 0.18);
+      const e = 1 - (1 - k) * (1 - k);
+      return this.vmMix(this.vmKey('back'), this.vmKey('release'), e);
+    }
+    if (fi) {
+      const p = this.vmMix(this.vmKey('fight'), this.vmKey('run'), fi.running ? 0.8 : 0);
+      if (fi.pressed && !fi.running) { p.pitch += Math.sin(t * 2.4) * 0.12; p.g.y += Math.sin(t * 2.4) * 0.03; } // 펌핑
+      return p;
+    }
+    if (s === 'retrieve') return this.vmMix(this.vmKey('idle'), this.vmKey('jerk'), vp.jerk || 0);
+    return this.vmKey('wait');
   }
 
   updateViewModel(t, dt) {
     const vm = this.vm;
     if (!vm) return;
     vm.visible = !!this.fpv;
-    if (!this.fpv) return;
+    if (!this.fpv) { this.vmCur = null; return; }
     const vp = this.vmPose || {};
-    const fighting = !!this.fightInfo;
-    const fi = this.fightInfo || { tension: 0.15, pressed: !!vp.pressed, running: false };
-    const bend = fighting ? clamp(0.35 + fi.tension * 0.7 + (fi.running ? 0.25 : 0), 0, 1.15) : 0.05 + (vp.jerk || 0) * 0.12;
-    // 카메라 좌표에서: 손잡이 → 위로 뻗다가 물고기 쪽으로 휘어진다
-    const base = new THREE.Vector3(0.2, -0.36, -1.12);
-    let dir = new THREE.Vector3(0, 0.35, -1);
-    if (this.fpTarget) {
-      dir = this.camera.worldToLocal(this.fpTarget.clone()).normalize();
+    const fi = this.fightInfo;
+    const tgt = this.vmTarget(t);
+    // 캐스팅 휘두르기와 저킹은 빠르게, 나머지는 부드럽게 따라간다
+    const fast = vp.state === 'flying' || vp.state === 'charging' || (vp.jerk || 0) > 0.05;
+    if (!this.vmCur) this.vmCur = tgt;
+    else this.vmCur = this.vmMix(this.vmCur, tgt, Math.min(1, dt * (fast ? 22 : 7)));
+    const cur = this.vmCur;
+    this.vmLook = cur.look;
+    // 숨쉬기·흔들림
+    const breathe = Math.sin(t * 1.6) * 0.006;
+    const sh = this.shake || 0;
+    const G = cur.g.clone().add(new THREE.Vector3((Math.random() - 0.5) * sh * 0.01, breathe + (Math.random() - 0.5) * sh * 0.012, 0));
+    const dir = new THREE.Vector3(Math.sin(cur.yaw) * Math.cos(cur.pitch), Math.sin(cur.pitch), -Math.cos(cur.yaw) * Math.cos(cur.pitch)).normalize();
+    // 낚싯대 좌표계 기준
+    const up0 = new THREE.Vector3(0, 1, 0);
+    let top = up0.clone().sub(dir.clone().multiplyScalar(up0.dot(dir)));
+    if (top.lengthSq() < 1e-4) top.set(0, 0, 1);
+    top.normalize();
+    const right = new THREE.Vector3().crossVectors(dir, top).normalize();
+    const basis = new THREE.Matrix4().makeBasis(right, dir, top);
+    this.vmRF.position.copy(G);
+    this.vmRF.quaternion.setFromRotationMatrix(basis);
+    // 휨: 줄이 당기는 쪽으로 (없으면 무게로 살짝 아래)
+    const L = 2.25;
+    let bend = 0.04, pull = new THREE.Vector3(0, -1, 0);
+    const lineTarget = this.landing && this.caught ? this.caught.getWorldPosition(new THREE.Vector3()) : this.fpTarget;
+    if (lineTarget) pull = this.camera.worldToLocal(lineTarget.clone()).sub(G).normalize();
+    if (fi) bend = clamp(0.3 + fi.tension * 0.75 + (fi.running ? 0.3 : 0), 0, 1.25);
+    else if (this.landing) bend = 0.55;
+    else if (vp.state === 'retrieve') bend = 0.08 + (vp.jerk || 0) * 0.22;
+    else if (vp.state === 'charging') { bend = 0.12 + (vp.power || 0) * 0.25; pull.set(0, -1, 0.3).normalize(); }
+    else if (vp.state === 'flying') { const k = clamp((vp.k || 0) / 0.18); bend = 0.45 * Math.sin(k * Math.PI); pull.copy(dir).multiplyScalar(-1).add(new THREE.Vector3(0, -0.3, 0.5)).normalize(); }
+    const bd = pull.clone().sub(dir.clone().multiplyScalar(pull.dot(dir)));
+    if (bd.lengthSq() < 1e-4) bd.set(0, -1, 0);
+    bd.normalize();
+    const vib = fi && fi.running ? Math.sin(t * 38) * 0.015 : 0;
+    const N = 30;
+    const pts = [];
+    const start = G.clone().add(dir.clone().multiplyScalar(0.17));
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      const along = u * L * (1 - bend * 0.18 * u);
+      const off = bend * L * 0.55 * Math.pow(u, 2.2) + vib * u;
+      pts.push(start.clone().add(dir.clone().multiplyScalar(along)).add(bd.clone().multiplyScalar(off)));
     }
-    const wob = Math.sin(t * (fi.running ? 22 : 9)) * 0.03 * (fi.running ? 2 : 1);
-    const up = new THREE.Vector3(-0.08, 1.05, -1.25);
-    // 캐스팅: 힘을 모을수록 어깨 뒤로 젖히고, 던지면 앞으로 휘두른다
-    if (vp.state === 'charging') { up.set(-0.05, 1.25 + vp.power * 0.2, -0.4 + vp.power * 0.75); }
-    else if (vp.state === 'flying') { const k = clamp(vp.k * 4); up.set(-0.06, lerp(1.4, 0.75, k), lerp(0.3, -1.45, k)); }
-    // 저킹: 툭 쳐올렸다 내린다
-    if (vp.jerk) { up.y += vp.jerk * 0.45; up.x -= vp.jerk * 0.12; }
-    const c1 = base.clone().add(up.clone().multiplyScalar(1.05));
-    const tip = base.clone().add(up.clone().multiplyScalar(1.7 - bend * 0.55)).add(dir.clone().multiplyScalar(0.4 + bend * 1.1));
-    tip.y -= bend * 0.9;
-    tip.x += wob;
-    const curve = new THREE.QuadraticBezierCurve3(base, c1, tip);
-    const g = new THREE.TubeGeometry(curve, 28, 0.01, 6, false);
-    // 끝으로 갈수록 가늘게
-    const p = g.attributes.position;
-    const n = 28 + 1, rs = 6 + 1;
-    for (let i = 0; i < n; i++) {
-      const k = 1 - (i / (n - 1)) * 0.7;
-      const ctr = curve.getPoint(i / (n - 1));
-      for (let j = 0; j < rs; j++) {
-        const idx = i * rs + j;
-        p.setXYZ(idx, ctr.x + (p.getX(idx) - ctr.x) * k, ctr.y + (p.getY(idx) - ctr.y) * k, ctr.z + (p.getZ(idx) - ctr.z) * k);
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const geo = new THREE.TubeGeometry(curve, N, 0.0105, 7, false);
+    const P = geo.attributes.position;
+    for (let i = 0; i <= N; i++) {
+      const k = 1 - (i / N) * 0.75;
+      const c = curve.getPoint(i / N);
+      for (let j = 0; j <= 7; j++) {
+        const idx = i * 8 + j;
+        P.setXYZ(idx, c.x + (P.getX(idx) - c.x) * k, c.y + (P.getY(idx) - c.y) * k, c.z + (P.getZ(idx) - c.z) * k);
       }
     }
     this.vmRod.geometry.dispose();
-    this.vmRod.geometry = g;
+    this.vmRod.geometry = geo;
+    const tip = curve.getPoint(1);
     this.vmTip.position.copy(tip);
-    // 손이 릴을 감는다
-    if (fi.pressed || vp.pressed) this.crankAngle += dt * (fi.running ? 9 : 16);
+    // 가이드
+    this.vmGuides.forEach((g, i) => {
+      const u = 0.08 + i * 0.16;
+      const p = curve.getPoint(u), tn = curve.getTangent(u);
+      g.position.copy(p).add(top.clone().multiplyScalar(-0.018 + i * 0.002));
+      g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tn);
+    });
+    // 릴 핸들: 감을 때 회전
+    const reeling = (fi && fi.pressed) || (vp.state === 'retrieve' && vp.pressed) || this.landing;
+    if (reeling) this.crankAngle += dt * (fi && fi.running ? 7 : 15);
     this.vmCrank.rotation.x = this.crankAngle;
-    // 낚싯줄: 초리 끝 → 물고기
-    if (this.fpTarget) {
-      vm.updateMatrixWorld(true);
-      const tw = this.vmTip.getWorldPosition(new THREE.Vector3());
-      this.setLine(tw, this.fpTarget, (1 - fi.tension) * 1.5);
+    vm.updateMatrixWorld(true);
+    // 왼손: 릴링 중엔 핸들 노브, 캐스팅 중엔 그립 끝, 저킹 땐 앞 그립
+    const toVm = (obj, local) => vm.worldToLocal(obj.localToWorld(local.clone()));
+    let LH;
+    if (vp.state === 'charging' || vp.state === 'flying') LH = toVm(this.vmRF, new THREE.Vector3(0, -0.33, 0));
+    else LH = toVm(this.vmKnob, new THREE.Vector3(0, 0, 0)).add(new THREE.Vector3(-0.025, 0, 0.01));
+    this.vmLH.position.copy(LH);
+    this.vmLH.quaternion.copy(this.vmRF.quaternion);
+    // 소매·팔: 손목 → 화면 밖 어깨
+    const RH = toVm(this.vmRH, new THREE.Vector3(0.03, -0.05, 0.01));
+    const shR = new THREE.Vector3(0.42, -0.62, 0.15), shL = new THREE.Vector3(-0.48, -0.66, 0.15);
+    const limb = (mesh, a, b, from = 0, to = 1) => {
+      const p0 = a.clone().lerp(b, from), p1 = a.clone().lerp(b, to);
+      const d = p1.clone().sub(p0);
+      mesh.position.copy(p0);
+      mesh.scale.set(1, d.length(), 1);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    };
+    limb(this.vmForeR, RH, shR, 0, 0.16);
+    limb(this.vmSleeveR, RH, shR, 0.12, 1.2);
+    limb(this.vmForeL, LH, shL, 0, 0.16);
+    limb(this.vmSleeveL, LH, shL, 0.12, 1.2);
+    // 낚싯줄: 초리 → 루어/물고기
+    const tw = this.vmTip.getWorldPosition(new THREE.Vector3());
+    if (lineTarget && vp.state !== 'charging') {
+      const mouth = this.landing && this.caught ? new THREE.Vector3(-0.45 * this.caught.userData.sizeM, 0, 0).applyMatrix4(this.caught.matrixWorld) : lineTarget;
+      this.setLine(tw, mouth, fi ? (1 - fi.tension) * 1.2 : this.landing ? 0.05 : 1.6);
+    } else if (vp.state === 'charging') {
+      // 초리 끝에 매달린 루어
+      const lw = tw.clone().add(new THREE.Vector3(0, -0.45, 0));
+      this.setLine(tw, lw, 0);
+      this.lure.visible = true;
+      this.lure.position.copy(lw);
+    }
+  }
+
+  // ── 갯바위에 부딪혀 하얗게 부서지는 파도 ──
+  buildSpray() {
+    const tex = TX.softDot('255,255,255');
+    this.spray = [];
+    for (let i = 0; i < 90; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+      sp.userData = { life: 0 };
+      this.scene.add(sp);
+      this.spray.push(sp);
+    }
+    this.nextSpray = 0;
+  }
+
+  updateSpray(t, dt, ax, az) {
+    if (!this.spray) return;
+    if (t > this.nextSpray && !MODE.river) {
+      this.nextSpray = t + 0.5 + Math.random() * 1.1;
+      // 근처 물가의 바위(없으면 물가)에서 터진다
+      const near = this.rockTops.filter((r) => Math.abs(r.X - ax) < 30 && Math.abs(r.Z - az) < 30 && r.top < 2.5 && heightAt(r.X, r.Z) < 0.4);
+      let X, Z, Y, power;
+      if (near.length) { const r = near[Math.floor(Math.random() * near.length)]; X = r.X + (Math.random() - 0.5) * r.rad; Z = r.Z - r.rad * 0.5; Y = Math.max(0.1, r.top * 0.5); power = 1 + Math.random(); }
+      else if (MODE.sihwa || ax > PIER_X) { X = ax + (Math.random() - 0.5) * 40; Z = MODE.sihwa ? -DIKE.half - 2 : -7.5; Y = 0.3; power = 1.2; }
+      else { X = ax + (Math.random() - 0.5) * 40; Z = shoreZ(X) - 1; Y = 0.05; power = 0.45; }
+      let n = 0;
+      for (const sp of this.spray) {
+        if (sp.userData.life > 0) continue;
+        const u = sp.userData;
+        u.life = u.max = 0.9 + Math.random() * 0.8;
+        u.v = new THREE.Vector3((Math.random() - 0.5) * 2.5, (2.5 + Math.random() * 3.5) * power, (Math.random() - 0.2) * 2);
+        sp.position.set(X + (Math.random() - 0.5) * 1.5, Y, Z + (Math.random() - 0.5) * 1.2);
+        u.size = 0.6 + Math.random() * 1.2 * power;
+        if (++n > 16 * power) break;
+      }
+      if (this.audioCrash) this.audioCrash(Math.hypot(X - ax, Z - az), power);
+    }
+    for (const sp of this.spray) {
+      const u = sp.userData;
+      if (u.life <= 0) { sp.material.opacity = 0; continue; }
+      u.life -= dt;
+      u.v.y -= 9.8 * dt;
+      sp.position.addScaledVector(u.v, dt);
+      const k = 1 - u.life / u.max;
+      sp.scale.setScalar(u.size * (0.6 + k * 1.8));
+      sp.material.opacity = 0.85 * (1 - k) * (this.night ? 0.4 : 1);
     }
   }
 
@@ -2419,6 +2615,7 @@ export class World {
       pa.a.pose({ walking: !!st.w, phase: pa.phase, rodE: st.rod != null ? -st.rod : 1.25, bend: st.bend || 0, noRod: !!st.noRod, t: t + pa.X,
         action: act, actionT: act ? (Date.now() - st.actT) / 1000 : 0 });
       pa.a.group.position.set(pa.X, pa.Y + pa.a.bob, pa.Z);
+      pa.a.group.visible = !(this.fpv && this.player && Math.hypot(pa.X - this.player.group.position.x, pa.Z - this.player.group.position.z) < 2.2);
       pa.a.group.rotation.y = pa.yaw;
       // 낚싯줄
       const fishing = st.f && ['flying', 'retrieve', 'waiting', 'bite', 'fight'].includes(st.f);
@@ -2642,6 +2839,9 @@ export class World {
     this.caught = f;
     this.catchSpot = new THREE.Vector3(X, f.userData.base.y, Z);
     this.catchCamUntil = performance.now() + (this.catchCamMs || 3200);
+    this.landing = true;
+    clearTimeout(this.landingT);
+    this.landingT = setTimeout(() => { this.landing = false; }, this.catchCamMs || 3000);
   }
   // 방생: 손에서 물로 포물선을 그리며 돌아간다
   releaseCatch() {
@@ -2652,11 +2852,13 @@ export class World {
     if (MODE.sihwa) wz = -DIKE.half - 6;
     else if (b.x > PIER_X && !MODE.river) wz = -9;
     else wz = Math.min(b.z - 2.5, shoreZ(b.x) - 2.5);
+    this.landing = false;
     c.userData.release = { t0: performance.now() + 500, from: new THREE.Vector3(b.x, b.y, b.z), to: new THREE.Vector3(b.x + 0.5, 0, wz) };
     this.catchCamUntil = performance.now() + 2600;
   }
 
   clearCatch() {
+    this.landing = false;
     if (this.caught) { this.scene.remove(this.caught); this.caught = null; }
     this.catchCamUntil = 0;
   }

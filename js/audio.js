@@ -371,6 +371,18 @@ export class SoundScape {
     this._tone('sine', 880, 1320, 0.08, 0.01, 0.25, 0.1);
   }
 
+  // 갯바위에 부딪혀 부서지는 파도: '쿠웅' + '촤아아'
+  crash(dist, power = 1) {
+    if (!this.ctx || dist > 45) return;
+    const v = Math.min(1, power) * (1 - dist / 45);
+    const t = this.ctx.currentTime;
+    const boom = this._burst(this.brown, 'lowpass', 260, 0.8, 0.55 * v, 0.02, 0.6);
+    boom.frequency.linearRampToValueAtTime(120, t + 0.6);
+    const hiss = this._burst(this.white, 'bandpass', 1800, 0.6, 0.32 * v, 0.03, 1.6, 0.05);
+    hiss.frequency.linearRampToValueAtTime(900, t + 1.7);
+    this._burst(this.pink, 'highpass', 3500, 0.5, 0.12 * v, 0.2, 1.4, 0.3);
+  }
+
   // 저킹: 낚싯대를 쳐올릴 때 '휙' + 릴 '틱틱'
   jerk() {
     if (!this.ctx) return;
