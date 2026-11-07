@@ -61,6 +61,8 @@ const st = {
 if (st.line) st.point = POINTS[st.line][0];
 // 예전에 저장된 장비(없어진 것)는 기본값으로
 for (const k of Object.keys(GEAR)) if (!GEAR[k].some((g) => g.id === st.gear[k])) st.gear[k] = DEFAULT_GEAR[k];
+// 입장 화면은 항상 가운데 파란 카드(탐험가)부터
+st.gear.outfit = 'boots';
 let creel = load('surflure.creel', []);
 let timeMode = 'real';
 let walkDir = 0;

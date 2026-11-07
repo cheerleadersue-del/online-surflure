@@ -110,7 +110,7 @@ export const GEAR = {
   ],
 };
 export const gearOf = (kind, id) => GEAR[kind].find((g) => g.id === id) || GEAR[kind][0];
-export const DEFAULT_GEAR = { rod: 'ajido622m', reel: 'stella', bait: 'basic', outfit: 'basic' };
+export const DEFAULT_GEAR = { rod: 'ajido622m', reel: 'stella', bait: 'basic', outfit: 'boots' };
 
 export const METHODS = {
   lure: { id: 'lure', name: '서프루어', icon: '🎣', desc: '던지고 감으며 입질을 유도' },
