@@ -218,7 +218,7 @@ function enterSea() {
     history.replaceState(null, '', `?line=${st.line}&point=${st.point.id}`);
     net.connect(st.point.id, { name: st.look.name, look: st.look });
     chatLog(`${st.point.name}에 도착했어요. 💬 채팅으로 인사해 보세요!`, 'sys');
-    setTimeout(() => toast('🕊️ 하늘 뷰로 보일링(물고기 떼)을 찾아보세요! 표시를 누르면 그 앞으로 이동해요'), 4200);
+    if (!DATA.isRiver(st.point)) setTimeout(() => toast('🕊️ 하늘 뷰로 보일링(물고기 떼)을 찾아보세요! 표시를 누르면 그 앞으로 이동해요'), 4200);
   });
 }
 
@@ -758,8 +758,9 @@ function frame(now) {
     const x = st.onBoat ? BOAT_DOCK : av.x;
     const river = DATA.isRiver(st.point);
     audio.update({
-      forest: river ? 0.55 : st.onBoat ? 0 : 1 - smooth(1700, 2700, x),
-      sea: river ? 0.22 : st.onBoat ? 0.6 : 0.08 + smooth(1500, 3000, x) * 0.92,
+      forest: river ? 0.35 : st.onBoat ? 0 : 1 - smooth(1700, 2700, x),
+      sea: river ? 0 : st.onBoat ? 0.6 : 0.08 + smooth(1500, 3000, x) * 0.92,
+      stream: river ? 1 : 0,
       gull: river ? 0 : smooth(2600, 3200, x),
       rock: st.onBoat || river ? 0 : Math.max(smooth(6400, 6600, x) * (1 - smooth(9000, 9200, x)), smooth(5300, 5600, x) * 0.4),
       boat: st.onBoat ? 1 : 0,
