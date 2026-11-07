@@ -183,9 +183,9 @@ async function tryEnter() {
 
 // 캐릭터(복장) 고르기: 좌우로 넘기는 카드
 const CHARS = {
-  basic: { name: 'CASUAL', desc: '흰 티셔츠 · 베이지 반바지 · 청록 샌들 — 가볍게 물가를 거닐어요' },
-  boots: { name: 'EXPLORER', desc: '청록 탐험 조끼 · 카고 반바지 · 장화 · 뒤쪽 뜰채' },
-  wader: { name: 'OVERALLS', desc: '청록 멜빵 작업복 · 무릎 패드 · 장화 — 깊은 물도 OK' },
+  basic: { ko: '캐주얼', en: 'CASUAL', c: ['#ffb04a', '#ff8a1f'], desc: '흰 티셔츠 · 베이지 반바지 · 청록 샌들. 가볍게 물가를 거닐어요.' },
+  boots: { ko: '탐험가', en: 'EXPLORER', c: ['#7ec8ff', '#3b8ff0'], desc: '청록 탐험 조끼 · 카고 반바지 · 장화 · 뒤쪽 뜰채까지 챙긴 탐험가.' },
+  wader: { ko: '작업복', en: 'OVERALLS', c: ['#c7a6ff', '#8b6cf0'], desc: '청록 멜빵 작업복 · 무릎 패드 · 장화. 깊은 물도 문제없어요.' },
 };
 const OUTFITS = GEAR.outfit.map((o) => o.id);
 const lookFor = (outfit) => {
@@ -199,14 +199,23 @@ function stepChar(d) {
 }
 function updateCharUI() {
   const o = st.gear.outfit;
-  $('#entry').dataset.char = o;
-  $('#char-name').textContent = CHARS[o].name;
-  $('#char-desc').textContent = CHARS[o].desc;
+  const i = OUTFITS.indexOf(o), n = OUTFITS.length;
+  const E = $('#entry');
+  E.dataset.char = o;
+  const L = CHARS[OUTFITS[(i - 1 + n) % n]], R = CHARS[OUTFITS[(i + 1) % n]], C = CHARS[o];
+  E.style.setProperty('--c-center', C.c[0]);
+  E.style.setProperty('--c-center-2', C.c[1]);
+  E.style.setProperty('--c-left', L.c[0]);
+  E.style.setProperty('--c-right', R.c[0]);
+  $('#char-name').textContent = C.ko;
+  $('#char-en').textContent = C.en;
+  $('#char-desc').textContent = C.desc;
+  $('#char-count').textContent = `${i + 1} / ${n}`;
   const dots = $('#char-dots');
-  if (dots.children.length !== OUTFITS.length) { dots.textContent = ''; OUTFITS.forEach(() => dots.append(el('i'))); }
-  [...dots.children].forEach((d, i) => d.classList.toggle('on', OUTFITS[i] === o));
+  if (dots.children.length !== n) { dots.textContent = ''; OUTFITS.forEach(() => dots.append(el('i'))); }
+  [...dots.children].forEach((d, k) => d.classList.toggle('on', k === i));
   const m = document.querySelector('meta[name=theme-color]');
-  if (m) m.content = getComputedStyle($('#entry')).getPropertyValue('--bg').trim() || '#0f2a44';
+  if (m) m.content = '#2f4fd8';
 }
 $('#char-prev').addEventListener('click', () => stepChar(-1));
 $('#char-next').addEventListener('click', () => stepChar(1));
