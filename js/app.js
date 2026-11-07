@@ -446,11 +446,16 @@ function showCatch(f) {
   net.sendEvent('land', { fish: f.name, size: f.size });
   submitRecord(f);
   const av = st.avatar;
-  scene.showCatch(f, st.onBoat ? scene.boat.position.x : av.X, st.onBoat ? 1.2 : av.Y, st.onBoat ? scene.boat.position.z + 1.5 : av.Z);
-  setTimeout(() => openCatchDialog(f), 2600);
+  const img = DATA.fishImage(f.name);
+  if (img) scene.showTrophy(f, img); // 직접 그린 물고기: 1인칭으로 크게
+  else scene.showCatch(f, st.onBoat ? scene.boat.position.x : av.X, st.onBoat ? 1.2 : av.Y, st.onBoat ? scene.boat.position.z + 1.5 : av.Z);
+  setTimeout(() => openCatchDialog(f), img ? 3200 : 2600);
 }
 function openCatchDialog(f) {
   const counted = isRankFish(st.line, f.name);
+  const img = DATA.fishImage(f.name);
+  $('#c-img').hidden = !img;
+  if (img) $('#c-img').src = img;
   $('#c-title').textContent = counted ? `${f.name} ${f.size}cm!` : `${f.name} ${f.size}cm (잡어)`;
   $('#c-sub').textContent = `${METHOD_NAME[f.method]} · ${st.point ? st.point.name : ''} · ${timeSlot(nowDate())}\n${counted ? '랭킹에 기록됐어요.' : `${RANK_TARGET[st.line]}만 랭킹에 올라가요.`} 물고기를 놓아줄까요?`;
   $('#dlg-catch').showModal();

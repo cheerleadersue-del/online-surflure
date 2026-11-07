@@ -402,3 +402,14 @@ body.fpv #fish-main { padding: 10px; font-size: 0.9rem; }
 .rk-table .rk-pt { color: var(--ink-2); }
 .rk-empty { text-align: center; color: var(--ink-2); padding: 24px !important; }
 @media (max-width: 760px) { .rk-table .rk-pt { display: none; } .rk-table th:nth-child(4) { display: none; } .rk-table { font-size: 0.85rem; } }
+
+.catch-img { display: block; width: 100%; max-height: 180px; object-fit: contain; margin: 4px auto 6px; filter: drop-shadow(0 8px 14px rgba(0,0,0,0.35)); }
+/* 잡은 물고기를 크게 보여줄 때 다이얼로그는 화면 아래쪽에 작게 */
+#dlg-catch { margin: auto auto 10px; padding: 10px 14px; width: min(360px, calc(100vw - 24px)); background: rgba(255, 250, 240, 0.88); }
+#dlg-catch .catch-img { display: none !important; }
+#dlg-catch .catch-burst { display: none; }
+#dlg-catch .catch-img { max-height: 70px; margin: 0 auto 2px; }
+#dlg-catch h2 { margin: 2px 0; font-size: 1.25rem; }
+#dlg-catch p { margin: 2px 0 6px; font-size: 0.82rem; }
+#dlg-catch .catch-btns { margin-top: 6px; }
+#dlg-catch::backdrop { background: rgba(5, 15, 30, 0.15); backdrop-filter: none; }
