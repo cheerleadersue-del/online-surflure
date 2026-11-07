@@ -388,3 +388,16 @@ body.fpv #fish-main { padding: 10px; font-size: 0.9rem; }
 @media (max-width: 760px) { body.fpv .fish-panel { bottom: 16px; width: 52vw; } }
 
 .rank-title small { opacity: 0.75; margin-left: 4px; font-size: 0.7rem; }
+
+/* 랭킹 화면 */
+.rank { cursor: pointer; }
+.rk-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.rk-table th { text-align: left; font-size: 0.78rem; color: var(--ink-2); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.rk-table td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
+.rk-table tr:nth-child(-n+3) td { font-weight: 700; }
+.rk-table tr.me td { background: rgba(42, 161, 152, 0.12); }
+.rk-table .rk-n { width: 3em; text-align: center; font-size: 1.05rem; }
+.rk-table .rk-d { color: var(--ink-2); width: 4em; }
+.rk-table .rk-pt { color: var(--ink-2); }
+.rk-empty { text-align: center; color: var(--ink-2); padding: 24px !important; }
+@media (max-width: 760px) { .rk-table .rk-pt { display: none; } .rk-table th:nth-child(4) { display: none; } .rk-table { font-size: 0.85rem; } }

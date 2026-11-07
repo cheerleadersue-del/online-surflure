@@ -93,4 +93,27 @@ export class Records {
     }
     return [...best.values()].sort((a, b) => b.size - a.size || (a.created_at < b.created_at ? -1 : 1)).slice(0, 3);
   }
+
+  // 순위: 포인트(없으면 points 목록 전체)·기간(since ISO)별, 아이디마다 최고 기록 1개
+  async ranking({ point = null, points = null, since = null, limit = 10 } = {}) {
+    await this.ready;
+    let rows = [];
+    if (this.db) {
+      let q = this.db.from('records').select('point,name,species,size,created_at').order('size', { ascending: false }).limit(1000);
+      if (point) q = q.eq('point', point);
+      else if (points) q = q.in('point', points);
+      if (since) q = q.gte('created_at', since);
+      const { data, error } = await q;
+      if (error) { console.warn('랭킹 불러오기 실패', error.message); return []; }
+      rows = data;
+    } else {
+      rows = readLS(LS_REC, []).filter((r) => (!point || r.point === point) && (!points || points.includes(r.point)) && (!since || r.created_at >= since));
+    }
+    const best = new Map();
+    for (const r of rows) {
+      const b = best.get(r.name);
+      if (!b || r.size > b.size || (r.size === b.size && r.created_at < b.created_at)) best.set(r.name, r);
+    }
+    return [...best.values()].sort((a, b) => b.size - a.size || (a.created_at < b.created_at ? -1 : 1)).slice(0, limit);
+  }
 }

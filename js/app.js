@@ -212,7 +212,6 @@ function enterSea() {
     $('#rank-point').textContent = st.point.name;
     showBanner(st.point.name, st.point.desc);
     st.flags = [];
-    st.best = null;
     rankSig = '';
     buildMinimap();
     refreshRank();
@@ -773,7 +772,7 @@ function frame(now) {
       net.sendState({
         X: +av.X.toFixed(2), Y: +av.Y.toFixed(2), Z: +av.Z.toFixed(2), yaw: +(scene.player ? scene.player.group.rotation.y : 0).toFixed(2),
         w: av.walking ? 1 : 0, rod: ps.rod != null ? +ps.rod.toFixed(2) : null, bend: ps.bend ? +ps.bend.toFixed(2) : 0, noRod: ps.noRod ? 1 : 0,
-        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), b: st.best ? [st.best.species, st.best.size, st.best.at] : null, act: act ? act.name : null, actT: act ? act.wall : null,
+        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), act: act ? act.name : null, actT: act ? act.wall : null,
       });
     }
     npcLife(dt);
@@ -926,52 +925,93 @@ function onFightEnd() {
 }
 
 // 포인트 랭킹 1~3위
-// ── 접속자 랭킹: 지금 이 포인트에 접속해 있는 사람들끼리, 접속 후 잡은 최대어로 순위 ──
+// ── 오늘의 랭킹: 오늘 이 포인트에서 잡은 최대어 1~3위 (나가도 유지) ──
+const todayISO = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
 let rankSig = '';
-function liveRanking() {
-  const list = [];
-  if (st.best) list.push({ name: st.look.name, species: st.best.species, size: st.best.size, at: st.best.at, me: true });
-  for (const p of net.peers.values()) {
-    const b = p.st && p.st.b;
-    if (b && b[1] > 0) list.push({ name: p.name, species: String(b[0]).slice(0, 12), size: +b[1], at: +b[2] || 0 });
-  }
-  // 크기가 같으면 먼저 잡은 사람이 위
-  return list.sort((a, b) => b.size - a.size || a.at - b.at);
-}
-function refreshRank() {
+async function refreshRank() {
   if (!st.point) return [];
-  const top = liveRanking().slice(0, 3);
-  const sig = top.map((r) => `${r.name}|${r.size}|${r.species}`).join(',') + '#' + (net.peers.size + 1);
+  const top = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3 });
+  const sig = top.map((r) => `${r.name}|${r.size}|${r.species}`).join(',');
   if (sig === rankSig) return top;
   rankSig = sig;
   const ol = $('#rank-list');
   ol.textContent = '';
   const medal = ['🥇', '🥈', '🥉'];
+  const online = new Set([st.look.name, ...[...net.peers.values()].map((p) => p.name)]);
   for (let i = 0; i < 3; i++) {
     const r = top[i];
     ol.append(r
-      ? el('li', { class: r.me ? 'me' : '' }, el('span', { class: 'm', text: medal[i] }), el('span', { text: `${r.name} · ${r.species} ${Math.round(r.size * 10) / 10}cm` }))
+      ? el('li', { class: r.name === st.look.name ? 'me' : '' }, el('span', { class: 'm', text: medal[i] }),
+        el('span', { text: `${r.name}${online.has(r.name) ? ' 🟢' : ''} · ${r.species} ${Math.round(r.size * 10) / 10}cm` }))
       : el('li', { class: 'vacant' }, el('span', { class: 'm', text: medal[i] }), el('span', { text: '— 도전자를 기다려요' })));
   }
-  $('#rank-count').textContent = `접속 ${net.peers.size + 1}명`;
   return top;
 }
-setInterval(() => { if (st.playing) refreshRank(); }, 1000);
-$('#rank').addEventListener('click', (e) => { const b = e.currentTarget; b.classList.toggle('open'); b.setAttribute('aria-expanded', b.classList.contains('open')); });
-function submitRecord(f) {
+records.on((point) => { if (st.playing && st.point && (!point || point === st.point.id)) { rankSig = ''; refreshRank(); } });
+setInterval(() => { if (st.playing) refreshRank(); }, 20000);
+async function submitRecord(f) {
   if (!st.point) return;
-  // 기록 보관(포인트별 역대 기록)은 그대로 저장
-  records.submit(st.point.id, st.look.name, f.name, f.size);
-  const beforeRank = liveRanking().findIndex((r) => r.me);
-  if (!st.best || f.size > st.best.size) st.best = { species: f.name, size: f.size, at: Date.now() };
+  const before = await records.ranking({ point: st.point.id, since: todayISO(), limit: 3 });
+  await records.submit(st.point.id, st.look.name, f.name, f.size);
   rankSig = '';
-  const top = refreshRank();
-  const rank = top.findIndex((r) => r.me);
-  if (rank >= 0 && (beforeRank < 0 || rank < beforeRank || st.best.size === f.size)) {
-    toast(`🏆 접속자 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm`);
-    net.sendEvent('chat', { text: `🏆 접속자 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm` });
+  const top = await refreshRank();
+  const rank = top.findIndex((r) => r.name === st.look.name && r.size === f.size);
+  const was = before.findIndex((r) => r.name === st.look.name);
+  if (rank >= 0 && (was < 0 || rank < was || before[was].size < f.size)) {
+    toast(`🏆 오늘의 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm`);
+    net.sendEvent('chat', { text: `🏆 오늘의 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm` });
   }
 }
+
+// ── 역대 랭킹 화면 ──
+const RANK_PERIODS = { today: '오늘', week: '최근 7일', month: '최근 30일', all: '역대' };
+function periodSince(p) {
+  if (p === 'today') return todayISO();
+  if (p === 'week') return new Date(Date.now() - 7 * 864e5).toISOString();
+  if (p === 'month') return new Date(Date.now() - 30 * 864e5).toISOString();
+  return null;
+}
+function fillRankPoints() {
+  const line = $('#rk-line').value;
+  const sel = $('#rk-point');
+  const keep = sel.value;
+  sel.textContent = '';
+  sel.append(el('option', { value: '', text: '전체 포인트' }));
+  (POINTS[line] || []).forEach((p) => sel.append(el('option', { value: p.id, text: p.name })));
+  if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+}
+async function renderRankBoard() {
+  const line = $('#rk-line').value, point = $('#rk-point').value, period = $('#rk-period').value;
+  const body = $('#rk-body');
+  body.textContent = '';
+  body.append(el('tr', {}, el('td', { colspan: '5', class: 'rk-empty', text: '불러오는 중…' })));
+  const rows = await records.ranking({ point: point || null, points: point ? null : POINTS[line].map((p) => p.id), since: periodSince(period), limit: 20 });
+  body.textContent = '';
+  if (!rows.length) { body.append(el('tr', {}, el('td', { colspan: '5', class: 'rk-empty', text: '아직 기록이 없어요. 첫 기록의 주인공이 되어보세요!' }))); return; }
+  const medal = ['🥇', '🥈', '🥉'];
+  rows.forEach((r, i) => {
+    const d = new Date(r.created_at);
+    body.append(el('tr', { class: r.name === st.look.name ? 'me' : '' },
+      el('td', { class: 'rk-n', text: medal[i] || String(i + 1) }),
+      el('td', { text: r.name }),
+      el('td', { text: `${r.species} ${Math.round(r.size * 10) / 10}cm` }),
+      el('td', { class: 'rk-pt', text: (findPoint(r.point) || {}).name || r.point }),
+      el('td', { class: 'rk-d', text: isNaN(d) ? '' : `${d.getMonth() + 1}/${d.getDate()}` })));
+  });
+  $('#rk-note').textContent = `${LINES[line].name} · ${point ? findPoint(point).name : '전체 포인트'} · ${RANK_PERIODS[period]} 최대어 순위 (아이디별 최고 기록)${records.mode === 'cloud' ? '' : ' — 서버 미연결: 이 기기 기록만 보여요'}`;
+}
+function openRankBoard() {
+  $('#rk-line').value = st.line || 'east';
+  fillRankPoints();
+  $('#rk-point').value = st.point && POINTS[$('#rk-line').value].includes(st.point) ? st.point.id : '';
+  $('#rk-period').value = 'all';
+  renderRankBoard();
+  $('#dlg-rank').showModal();
+}
+$('#rk-line').addEventListener('change', () => { fillRankPoints(); renderRankBoard(); });
+['#rk-point', '#rk-period'].forEach((id) => $(id).addEventListener('change', renderRankBoard));
+$('#btn-rank').addEventListener('click', () => { audio.ui(); openRankBoard(); });
+$('#rank').addEventListener('click', () => { audio.ui(); openRankBoard(); });
 
 // 채팅 입력: 버튼을 누를 때만 위쪽에 한 줄로 열린다
 function openChat(on) {
