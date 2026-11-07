@@ -1874,9 +1874,14 @@ export class World {
       if (this.player) this.scene.remove(this.player.group);
       this.player = new Avatar(st.look, st.look.name || '낚시꾼');
       this.scene.add(this.player.group);
-      this.lamp = new THREE.PointLight('#ffd9a0', 0, 14, 1.6);
+      this.lamp = new THREE.PointLight('#ffd9a0', 0, 8, 1.6);
       this.lamp.position.set(0, 1.9, 0.3);
       this.player.group.add(this.lamp);
+    }
+    if (!this.headSpot) {
+      // 헤드랜턴 불빛 (밤): 바라보는 앞쪽 땅을 둥글게 비춘다
+      this.headSpot = new THREE.SpotLight('#fff1cf', 0, 32, 0.5, 0.5, 1.1);
+      this.scene.add(this.headSpot, this.headSpot.target);
     }
     if (!this.npcs.length) {
       this.npcs = st.npcs.map((n) => {
@@ -1911,7 +1916,25 @@ export class World {
     P.group.position.set(ax, ay + P.bob, az);
     const yawTarget = fishingPose || st.onBoat ? Math.PI : (av.yaw ?? Math.PI / 2);
     P.group.rotation.y += angDiff(yawTarget, P.group.rotation.y) * Math.min(1, dt * 10);
-    this.lamp.intensity = this.night ? 6 : 0;
+    // 헤드랜턴
+    const lampOn = this.night && st.lampOn !== false;
+    this.lamp.intensity = lampOn ? 2.5 : this.night ? 1.2 : 0;
+    P.setLamp(lampOn);
+    const hs = this.headSpot;
+    hs.intensity = lampOn ? 320 : 0;
+    if (lampOn) {
+      if (this.fpv) {
+        const cam = this.camera;
+        hs.position.copy(cam.position);
+        cam.getWorldDirection(this._lampV || (this._lampV = new THREE.Vector3()));
+        hs.target.position.copy(cam.position).addScaledVector(this._lampV, 10);
+      } else {
+        P.group.updateMatrixWorld(true);
+        P.lampG.getWorldPosition(hs.position);
+        P.lampDir.getWorldPosition(hs.target.position);
+      }
+      hs.target.updateMatrixWorld();
+    }
     // 목적지 표시
     if (this.marker) {
       const tg = av.target;
@@ -1926,6 +1949,7 @@ export class World {
 
     // NPC
     this.npcs.forEach(({ a, n }, i) => {
+      a.setLamp(this.night);
       if (n.X == null) {
         n.X = n.x * M;
         if (MODE.sihwa) { n.X = clamp(n.X, DIKE.x0 + 5, DIKE.x1 - 5); n.Z = -5.6; }
@@ -2677,6 +2701,7 @@ export class World {
       pa.a.group.position.set(pa.X, pa.Y + pa.a.bob, pa.Z);
       pa.a.group.visible = !(this.fpv && this.player && Math.hypot(pa.X - this.player.group.position.x, pa.Z - this.player.group.position.z) < 2.2);
       pa.a.group.rotation.y = pa.yaw;
+      pa.a.setLamp(this.night && st.lp !== 0);
       // 낚싯줄
       const fishing = st.f && ['flying', 'retrieve', 'waiting', 'bite', 'fight'].includes(st.f);
       if (!pa.line) {
