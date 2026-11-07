@@ -212,6 +212,8 @@ function enterSea() {
     $('#rank-point').textContent = st.point.name;
     showBanner(st.point.name, st.point.desc);
     st.flags = [];
+    st.best = null;
+    rankSig = '';
     buildMinimap();
     refreshRank();
     history.replaceState(null, '', `?line=${st.line}&point=${st.point.id}`);
@@ -771,7 +773,7 @@ function frame(now) {
       net.sendState({
         X: +av.X.toFixed(2), Y: +av.Y.toFixed(2), Z: +av.Z.toFixed(2), yaw: +(scene.player ? scene.player.group.rotation.y : 0).toFixed(2),
         w: av.walking ? 1 : 0, rod: ps.rod != null ? +ps.rod.toFixed(2) : null, bend: ps.bend ? +ps.bend.toFixed(2) : 0, noRod: ps.noRod ? 1 : 0,
-        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), act: act ? act.name : null, actT: act ? act.wall : null,
+        f: fishing.state, fd: +(fishing.d || 0).toFixed(2), b: st.best ? [st.best.species, st.best.size, st.best.at] : null, act: act ? act.name : null, actT: act ? act.wall : null,
       });
     }
     npcLife(dt);
@@ -924,34 +926,50 @@ function onFightEnd() {
 }
 
 // 포인트 랭킹 1~3위
-async function refreshRank() {
-  if (!st.point) return;
-  const top = await records.top3(st.point.id);
+// ── 접속자 랭킹: 지금 이 포인트에 접속해 있는 사람들끼리, 접속 후 잡은 최대어로 순위 ──
+let rankSig = '';
+function liveRanking() {
+  const list = [];
+  if (st.best) list.push({ name: st.look.name, species: st.best.species, size: st.best.size, at: st.best.at, me: true });
+  for (const p of net.peers.values()) {
+    const b = p.st && p.st.b;
+    if (b && b[1] > 0) list.push({ name: p.name, species: String(b[0]).slice(0, 12), size: +b[1], at: +b[2] || 0 });
+  }
+  // 크기가 같으면 먼저 잡은 사람이 위
+  return list.sort((a, b) => b.size - a.size || a.at - b.at);
+}
+function refreshRank() {
+  if (!st.point) return [];
+  const top = liveRanking().slice(0, 3);
+  const sig = top.map((r) => `${r.name}|${r.size}|${r.species}`).join(',') + '#' + (net.peers.size + 1);
+  if (sig === rankSig) return top;
+  rankSig = sig;
   const ol = $('#rank-list');
   ol.textContent = '';
-  // 1·2·3위를 항상 세 줄로 (빈자리는 '도전자 모집')
   const medal = ['🥇', '🥈', '🥉'];
   for (let i = 0; i < 3; i++) {
     const r = top[i];
     ol.append(r
-      ? el('li', { class: r.name === st.look.name ? 'me' : '' }, el('span', { class: 'm', text: medal[i] }), el('span', { text: `${r.name} · ${r.species} ${Math.round(r.size * 10) / 10}cm` }))
+      ? el('li', { class: r.me ? 'me' : '' }, el('span', { class: 'm', text: medal[i] }), el('span', { text: `${r.name} · ${r.species} ${Math.round(r.size * 10) / 10}cm` }))
       : el('li', { class: 'vacant' }, el('span', { class: 'm', text: medal[i] }), el('span', { text: '— 도전자를 기다려요' })));
   }
+  $('#rank-count').textContent = `접속 ${net.peers.size + 1}명`;
   return top;
 }
-records.on((point) => { if (st.playing && st.point && (!point || point === st.point.id)) refreshRank(); });
-setInterval(() => { if (st.playing) refreshRank(); }, 30000);
+setInterval(() => { if (st.playing) refreshRank(); }, 1000);
 $('#rank').addEventListener('click', (e) => { const b = e.currentTarget; b.classList.toggle('open'); b.setAttribute('aria-expanded', b.classList.contains('open')); });
-async function submitRecord(f) {
+function submitRecord(f) {
   if (!st.point) return;
-  const before = await records.top3(st.point.id);
-  await records.submit(st.point.id, st.look.name, f.name, f.size);
-  const top = await refreshRank();
-  const rank = (top || []).findIndex((r) => r.name === st.look.name && r.size === f.size);
-  const wasRank = before.findIndex((r) => r.name === st.look.name);
-  if (rank >= 0 && (wasRank < 0 || rank < wasRank || (before[wasRank] && before[wasRank].size < f.size))) {
-    toast(`🏆 ${st.point.name} 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm`);
-    net.sendEvent('chat', { text: `🏆 랭킹 ${rank + 1}위 달성! ${f.name} ${f.size}cm` });
+  // 기록 보관(포인트별 역대 기록)은 그대로 저장
+  records.submit(st.point.id, st.look.name, f.name, f.size);
+  const beforeRank = liveRanking().findIndex((r) => r.me);
+  if (!st.best || f.size > st.best.size) st.best = { species: f.name, size: f.size, at: Date.now() };
+  rankSig = '';
+  const top = refreshRank();
+  const rank = top.findIndex((r) => r.me);
+  if (rank >= 0 && (beforeRank < 0 || rank < beforeRank || st.best.size === f.size)) {
+    toast(`🏆 접속자 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm`);
+    net.sendEvent('chat', { text: `🏆 접속자 랭킹 ${rank + 1}위! ${f.name} ${f.size}cm` });
   }
 }
 
