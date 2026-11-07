@@ -80,7 +80,7 @@ export class Fishing {
       this.state = 'flying';
       this.k = 0;
       const p = this.power;
-      const cast = this.gear ? this.gear.rod.cast : 1;
+      const cast = this.gear ? this.gear.rod.cast * (this.gear.outfit && this.gear.outfit.cast || 1) : 1;
       if (this.mode === 'lure') this.target = (0.3 + p * 0.68) * cast;
       else if (this.mode === 'far') this.target = (0.45 + p * 0.53) * cast;
       else this.target = 0.12 + p * 0.3;

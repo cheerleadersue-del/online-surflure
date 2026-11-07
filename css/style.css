@@ -497,3 +497,7 @@ body.fpv #fish-main { padding: 10px; font-size: 0.9rem; }
 .cta:disabled::after { background: #e3e7f2; color: #aab1c5; box-shadow: none; }
 .entry .fine { text-align: center; color: #9aa1b5; font-size: 0.76rem; margin: 12px 0 0; }
 @media (min-width: 700px) { .entry-card { padding-top: 16px; } .sheet { border-radius: 34px; margin-bottom: 24px; } }
+.carousel { cursor: pointer; }
+.cast-note { margin: 6px 0 0; text-align: center; font-size: 1.12rem; font-weight: 800; color: #1b2440; letter-spacing: -0.01em; }
+.cast-chip { margin: 8px auto 0; width: fit-content; padding: 6px 14px; border-radius: 999px; background: #e9edfb; color: var(--blue); font-size: 0.8rem; font-weight: 700; }
+.cast-chip b { letter-spacing: 2px; margin-left: 4px; color: #ffb000; }
