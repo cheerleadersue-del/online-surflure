@@ -62,6 +62,7 @@ netlify/functions/catches.mjs   인증글 API (Netlify Blobs 저장)
 ## 무료 배포: GitHub Pages + Supabase (추천)
 
 > v2(아이디 중복 방지·랭킹)를 쓰려면 `supabase/schema_v2.sql` 도 SQL Editor에서 한 번 실행하세요. 실행 전에는 이 브라우저에만 저장됩니다.
+> v3(친구)를 쓰려면 `supabase/schema_v3.sql` 도 SQL Editor에서 한 번 실행하세요. 실행 전에는 친구가 이 기기에만 저장되고, 친구 요청은 상대가 접속 중일 때만 전달됩니다.
 
 
 1. **Supabase 프로젝트 만들기**: [supabase.com](https://supabase.com) → New project (지역은 Seoul 추천)

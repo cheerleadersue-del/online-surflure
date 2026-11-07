@@ -104,6 +104,7 @@
       <button id="btn-write" class="btn-primary" type="button">📸 조과 인증하기</button>
       <button id="btn-board" type="button">📋 조과 게시판</button>
       <button id="btn-rank" type="button">🏆 랭킹</button>
+      <button id="btn-friends" type="button">👥 친구<b id="fr-badge" class="badge" hidden></b></button>
       <button id="btn-chat" type="button">💬 채팅</button>
       <button id="btn-sound" type="button" aria-pressed="true">🔊</button>
       <button id="btn-home" type="button" title="처음으로">🏠</button>
@@ -246,6 +247,50 @@
       <tbody id="rk-body"></tbody>
     </table>
   </dialog>
+
+  <dialog id="dlg-friends" class="dlg wide">
+    <form method="dialog" class="dlg-close"><button aria-label="닫기">✕</button></form>
+    <h2 class="dlg-title">👥 친구</h2>
+    <div class="fr-tabs" role="tablist">
+      <button type="button" data-t="list" class="on">친구 목록</button>
+      <button type="button" data-t="online">접속자</button>
+      <button type="button" data-t="rank">🏆 친구 랭킹</button>
+    </div>
+    <section class="fr-pane" data-p="list">
+      <form id="fr-add" class="fr-add">
+        <input id="fr-add-name" maxlength="12" placeholder="친구 아이디로 추가" autocomplete="off">
+        <button class="btn-primary" type="submit">친구 요청</button>
+      </form>
+      <p class="dlg-sub" id="fr-mode"></p>
+      <h3 class="fr-h" id="fr-in-h" hidden>받은 친구 요청</h3>
+      <ul class="fr-list" id="fr-in"></ul>
+      <h3 class="fr-h">내 친구</h3>
+      <ul class="fr-list" id="fr-list"></ul>
+      <h3 class="fr-h" id="fr-out-h" hidden>보낸 요청 (수락 대기)</h3>
+      <ul class="fr-list" id="fr-out"></ul>
+    </section>
+    <section class="fr-pane" data-p="online" hidden>
+      <p class="dlg-sub">지금 접속 중인 낚시꾼이에요. 친구 요청을 보내 보세요.</p>
+      <ul class="fr-list" id="fr-online"></ul>
+    </section>
+    <section class="fr-pane" data-p="rank" hidden>
+      <div class="board-filters">
+        <select id="frk-period" aria-label="기간">
+          <option value="today">오늘</option><option value="week">최근 7일</option><option value="month">최근 30일</option><option value="all" selected>역대</option>
+        </select>
+        <select id="frk-line" aria-label="라인">
+          <option value="east">동해라인</option><option value="west">서해라인</option><option value="sogari">쏘가리 낚시</option><option value="bass">배스 낚시</option>
+        </select>
+      </div>
+      <p class="dlg-sub" id="frk-note"></p>
+      <table class="rk-table">
+        <thead><tr><th>순위</th><th>아이디</th><th>어종·크기</th><th>포인트</th><th>날짜</th></tr></thead>
+        <tbody id="frk-body"></tbody>
+      </table>
+    </section>
+  </dialog>
+
+  <div id="fr-note" class="fr-note" hidden><p></p><div class="fr-note-btns"></div></div>
 
   <dialog id="dlg-catch" class="dlg small">
     <div class="catch-card">

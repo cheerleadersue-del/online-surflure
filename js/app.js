@@ -11,6 +11,7 @@ import { World } from './scene3d.js';
 import { AvatarPreview } from './avatar3d.js';
 import { loadAssets } from './assets.js';
 import { Net } from './net.js';
+import { Friends } from './friends.js';
 import { SoundScape } from './audio.js';
 import { Fishing } from './fishing.js';
 import { Store, sampleReports } from './store.js';
@@ -169,6 +170,7 @@ async function tryEnter() {
   }
   msg.textContent = r.local ? '✓ 사용할 수 있어요 (서버 미연결: 이 기기에서만 확인)' : '✓ 사용할 수 있는 아이디예요';
   msg.className = 'id-msg ok';
+  friends.start(st.look.name);
   enterSea();
 }
 
@@ -227,6 +229,7 @@ function enterSea() {
     refreshRank();
     history.replaceState(null, '', `?line=${st.line}&point=${st.point.id}`);
     net.connect(st.point.id, { name: st.look.name, look: st.look });
+    friends.setLocation(st.line, st.point.id, `${LINES[st.line].name} · ${st.point.name}`);
     chatLog(`${st.point.name}에 도착했어요. 💬 채팅으로 인사해 보세요!`, 'sys');
     if (!DATA.isRiver(st.point)) setTimeout(() => toast('🕊️ 하늘 뷰로 보일링(물고기 떼)을 찾아보세요! 표시를 누르면 그 앞으로 이동해요'), 4200);
   });
@@ -234,6 +237,7 @@ function enterSea() {
 
 function goHome() {
   net.leave();
+  friends.setLocation(null, null, '');
   fade(() => {
     st.playing = false;
     st.hideAvatar = true;
@@ -1055,6 +1059,155 @@ $('#rk-line').addEventListener('change', () => { fillRankPoints(); renderRankBoa
 $('#btn-rank').addEventListener('click', () => { audio.ui(); openRankBoard(); });
 $('#rank').addEventListener('click', () => { audio.ui(); openRankBoard(); });
 
+// ── 친구 ──
+const friends = new Friends(records, {
+  onChange: () => renderFriends(),
+  onRequest: (name) => {
+    audio.ui();
+    notify(`👋 ${name}님이 친구 요청을 보냈어요.`, [
+      ['수락', async () => { const r = await friends.add(name); toast(r.ok ? `🤝 ${name}님과 친구가 되었어요!` : r.reason); }, 'go'],
+      ['나중에', null],
+    ]);
+  },
+  onAccepted: (name) => { audio.ui(); toast(`🤝 ${name}님이 친구 요청을 수락했어요!`); },
+  onInvite: (name, info) => {
+    audio.ui();
+    vibrate([80, 40, 80]);
+    notify(`🎣 ${name}님이 같이 낚시하자고 해요! (${info.pname || '포인트'})`, [
+      ['같이 낚시하기', () => joinFriendAt(name, info), 'go'],
+      ['닫기', null],
+    ]);
+  },
+});
+let noteT = 0;
+function notify(text, actions) {
+  const n = $('#fr-note');
+  n.querySelector('p').textContent = text;
+  const box = n.querySelector('.fr-note-btns');
+  box.textContent = '';
+  actions.forEach(([label, fn, cls]) => box.append(el('button', { type: 'button', class: cls || '', text: label, onclick: () => { n.hidden = true; fn && fn(); } })));
+  n.hidden = false;
+  clearTimeout(noteT);
+  noteT = setTimeout(() => { n.hidden = true; }, 30000);
+}
+// 친구가 있는 포인트로 이동
+function joinFriendAt(name, info) {
+  const p = info && findPoint(info.point);
+  if (!p || !LINES[info.line]) return toast(`${name}님은 지금 낚시 포인트에 있지 않아요.`);
+  if (st.playing && st.point === p) return toast(`이미 ${name}님과 같은 포인트예요!`);
+  if (fishing.busy && fishing.state !== 'result') fishing.reset();
+  document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+  st.line = info.line;
+  st.point = p;
+  document.querySelectorAll('.line-card').forEach((x) => x.classList.toggle('on', x.dataset.line === st.line));
+  renderPoints();
+  validateEntry();
+  if (st.playing) net.leave();
+  enterSea();
+  setTimeout(() => toast(`🎣 ${name}님이 있는 ${p.name}(으)로 왔어요!`), 1200);
+}
+const whereText = (info) => (info && info.point ? `📍 ${info.pname}` : '🏠 대기실');
+function frRow(name, sub, online, ...btns) {
+  return el('li', {}, el('span', { class: `fr-dot${online ? ' on' : ''}` }), el('span', { class: 'fr-who' }, el('b', { text: name }), el('small', { text: sub })), ...btns);
+}
+const frBtn = (text, fn, cls = '') => el('button', { type: 'button', class: cls, text, onclick: async (e) => { e.currentTarget.disabled = true; await fn(); } });
+async function frAdd(name) {
+  const r = await friends.add(name);
+  toast(!r.ok ? r.reason : r.accepted ? `🤝 ${name}님과 친구가 되었어요!` : `📨 ${name}님에게 친구 요청을 보냈어요.`);
+}
+async function frRemove(name, what) {
+  if (what === '친구 삭제' && !confirm(`${name}님을 친구에서 삭제할까요?`)) return renderFriends();
+  if (!(await friends.remove(name))) toast('처리에 실패했어요. 잠시 후 다시 시도해 주세요.');
+}
+function renderFriends() {
+  const inc = friends.incoming, list = friends.friends, out = friends.outgoing;
+  const badge = $('#fr-badge');
+  badge.hidden = !inc.length;
+  badge.textContent = inc.length;
+  if (!$('#dlg-friends').open) return;
+  $('#fr-mode').textContent = friends.cloud ? '친구는 서버에 저장돼요. 다른 기기에서도 같은 아이디로 들어오면 그대로예요.'
+    : '서버 친구 저장소가 없어 이 기기에만 저장돼요. 친구 요청은 상대가 접속 중일 때 전달돼요.';
+  const ulIn = $('#fr-in');
+  ulIn.textContent = '';
+  $('#fr-in-h').hidden = !inc.length;
+  inc.forEach((n) => ulIn.append(frRow(n, '친구 요청을 보냈어요', friends.online.has(n),
+    frBtn('수락', () => frAdd(n), 'go'), frBtn('거절', () => frRemove(n), 'ghost'))));
+  const ul = $('#fr-list');
+  ul.textContent = '';
+  if (!list.length) ul.append(el('li', { class: 'empty', text: '아직 친구가 없어요. 접속자 탭이나 아이디로 친구를 추가해 보세요.' }));
+  list.sort((a, b) => (friends.online.has(b) - friends.online.has(a)) || a.localeCompare(b)).forEach((n) => {
+    const info = friends.online.get(n);
+    const btns = [];
+    if (info && info.point) btns.push(frBtn('같이 낚시하기', () => joinFriendAt(n, info), 'go'));
+    if (info && st.playing) btns.push(frBtn('초대', () => { friends.invite(n); toast(`📨 ${n}님을 ${st.point.name}(으)로 초대했어요.`); }));
+    btns.push(frBtn('삭제', () => frRemove(n, '친구 삭제'), 'ghost'));
+    ul.append(frRow(n, info ? whereText(info) : '오프라인', !!info, ...btns));
+  });
+  const ulOut = $('#fr-out');
+  ulOut.textContent = '';
+  $('#fr-out-h').hidden = !out.length;
+  out.forEach((n) => ulOut.append(frRow(n, '수락을 기다리는 중', friends.online.has(n), frBtn('취소', () => frRemove(n), 'ghost'))));
+  // 접속자
+  const ulOn = $('#fr-online');
+  ulOn.textContent = '';
+  const people = [...friends.online.values()].sort((a, b) => (b.point === (st.point && st.point.id)) - (a.point === (st.point && st.point.id)) || a.name.localeCompare(b.name));
+  if (!people.length) ulOn.append(el('li', { class: 'empty', text: friends.mode === 'off' ? '접속자 목록에 연결 중이에요…' : '지금은 다른 접속자가 없어요.' }));
+  people.forEach((p) => {
+    const s = friends.status(p.name);
+    const btn = s === 'friend' ? (p.point ? frBtn('같이 낚시하기', () => joinFriendAt(p.name, p), 'go') : el('button', { type: 'button', disabled: '', text: '🤝 친구' }))
+      : s === 'sent' ? el('button', { type: 'button', disabled: '', text: '요청 보냄' })
+        : s === 'incoming' ? frBtn('수락', () => frAdd(p.name), 'go') : frBtn('친구 추가', () => frAdd(p.name));
+    ulOn.append(frRow(p.name, (st.point && p.point === st.point.id ? '🟢 같은 포인트 · ' : '') + whereText(p), true, btn));
+  });
+}
+async function renderFriendRank() {
+  const line = $('#frk-line').value, period = $('#frk-period').value;
+  const body = $('#frk-body');
+  body.textContent = '';
+  body.append(el('tr', {}, el('td', { colspan: '5', class: 'rk-empty', text: '불러오는 중…' })));
+  const names = [st.look.name, ...friends.friends];
+  const rows = await records.ranking({ points: POINTS[line].map((p) => p.id), since: periodSince(period), limit: 50, species: RANK_TARGET[line] || null, names });
+  body.textContent = '';
+  $('#frk-note').textContent = `나와 친구 ${friends.friends.length}명 · ${LINES[line].name} · ${RANK_PERIODS[period]} ${RANK_TARGET[line] ? `${RANK_TARGET[line]} ` : ''}최대어 순위 (아이디별 최고 기록)`;
+  if (!rows.length) { body.append(el('tr', {}, el('td', { colspan: '5', class: 'rk-empty', text: friends.friends.length ? '아직 기록이 없어요. 친구들과 첫 기록에 도전해 보세요!' : '친구를 추가하면 친구끼리 순위를 겨룰 수 있어요.' }))); return; }
+  const medal = ['🥇', '🥈', '🥉'];
+  rows.forEach((r, i) => {
+    const d = new Date(r.created_at);
+    const on = r.name === st.look.name || friends.online.has(r.name);
+    body.append(el('tr', { class: r.name === st.look.name ? 'me' : '' },
+      el('td', { class: 'rk-n', text: medal[i] || String(i + 1) }),
+      el('td', { text: `${r.name}${on ? ' 🟢' : ''}` }),
+      el('td', { text: `${r.species} ${Math.round(r.size * 10) / 10}cm` }),
+      el('td', { class: 'rk-pt', text: (findPoint(r.point) || {}).name || r.point }),
+      el('td', { class: 'rk-d', text: isNaN(d) ? '' : `${d.getMonth() + 1}/${d.getDate()}` })));
+  });
+}
+function frTab(t) {
+  document.querySelectorAll('.fr-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
+  document.querySelectorAll('.fr-pane').forEach((p) => { p.hidden = p.dataset.p !== t; });
+  if (t === 'rank') renderFriendRank();
+}
+document.querySelectorAll('.fr-tabs button').forEach((b) => b.addEventListener('click', () => { audio.ui(); frTab(b.dataset.t); }));
+['#frk-line', '#frk-period'].forEach((id) => $(id).addEventListener('change', renderFriendRank));
+$('#fr-add').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const v = $('#fr-add-name').value.trim();
+  if (!v) return;
+  if (friends.isFriend(v)) return toast(`${v}님은 이미 친구예요.`);
+  await frAdd(v);
+  $('#fr-add-name').value = '';
+});
+$('#btn-friends').addEventListener('click', () => {
+  audio.ui();
+  if (friends.mode === 'off' && st.look.name) friends.start(st.look.name);
+  $('#frk-line').value = st.line || 'east';
+  $('#dlg-friends').showModal();
+  frTab('list');
+  renderFriends();
+  friends.reload();
+});
+setInterval(() => { if ($('#dlg-friends').open) friends.reload(); }, 15000);
+
 // 채팅 입력: 버튼을 누를 때만 위쪽에 한 줄로 열린다
 function openChat(on) {
   $('#chat-bar').hidden = !on;
@@ -1075,7 +1228,7 @@ addEventListener('keydown', (e) => {
   if (st.playing && e.key === 'Enter' && $('#chat-bar').hidden && !e.target.closest('input, textarea, select, dialog')) { e.preventDefault(); openChat(true); }
   if (e.key === 'Escape' && !$('#chat-bar').hidden) openChat(false);
 });
-addEventListener('beforeunload', () => net.leave());
+addEventListener('beforeunload', () => { net.leave(); friends.stop(); });
 
 // ── 시작 ──
 addEventListener('resize', () => scene.resize());
@@ -1106,4 +1259,4 @@ store.init().then((mode) => {
 }
 requestAnimationFrame(frame);
 // 개발 확인용 (?debug)
-if (params.has('debug')) window.__surf = { st, scene, fishing, audio, net };
+if (params.has('debug')) window.__surf = { st, scene, fishing, audio, net, friends, records };

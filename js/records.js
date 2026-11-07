@@ -51,6 +51,7 @@ export class Records {
   }
 
   on(fn) { this.listeners.add(fn); }
+  token() { return token(); }
 
   // 아이디 등록: { ok, reason }
   async claim(name) {
@@ -121,7 +122,7 @@ export class Records {
   }
 
   // 순위: 포인트(없으면 points 목록 전체)·기간(since ISO)별, 아이디마다 최고 기록 1개
-  async ranking({ point = null, points = null, since = null, limit = 10, species = null } = {}) {
+  async ranking({ point = null, points = null, since = null, limit = 10, species = null, names = null } = {}) {
     await this.ready;
     let rows = [];
     if (this.db) {
@@ -129,18 +130,19 @@ export class Records {
       if (point) q = q.eq('point', point);
       else if (points) q = q.in('point', points);
       if (since) q = q.gte('created_at', since);
+      if (names) q = q.in('name', names);
       if (species) q = species === '쏘가리' ? q.in('species', ['쏘가리', '황금쏘가리']) : q.eq('species', species);
       const { data, error } = await q;
       if (error) { console.warn('랭킹 불러오기 실패', error.message); return []; }
       rows = data;
     } else {
-      rows = readLS(LS_REC, []).filter((r) => (!point || r.point === point) && (!points || points.includes(r.point)) && (!since || r.created_at >= since) && (!species || r.species === species || (species === '쏘가리' && r.species === '황금쏘가리')));
+      rows = readLS(LS_REC, []).filter((r) => (!point || r.point === point) && (!points || points.includes(r.point)) && (!since || r.created_at >= since) && (!names || names.includes(r.name)) && (!species || r.species === species || (species === '쏘가리' && r.species === '황금쏘가리')));
     }
     // 서버 기록 + 접속자들이 실시간으로 알려준 기록 + (서버 저장 실패 시) 이 기기 기록
     const extra = [...this.extra.values()];
     if (this.db) extra.push(...readLS(LS_REC, []));
     for (const r of extra) {
-      if ((point && r.point !== point) || (points && !points.includes(r.point)) || (since && r.created_at < since) || (species && r.species !== species && !(species === '쏘가리' && r.species === '황금쏘가리'))) continue;
+      if ((point && r.point !== point) || (points && !points.includes(r.point)) || (since && r.created_at < since) || (names && !names.includes(r.name)) || (species && r.species !== species && !(species === '쏘가리' && r.species === '황금쏘가리'))) continue;
       rows.push(r);
     }
     const best = new Map();
