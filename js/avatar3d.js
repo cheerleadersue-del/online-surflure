@@ -204,14 +204,14 @@ export class Avatar {
     this.setLamp(false);
 
     // 낚싯대 (오른손)
-    const rodC = { bamboo: '#c9a55a', standard: '#1a1c20', premium: '#14306a' }[look.rod] || '#1a1d22';
+    const rodC = { ajido622m: '#1a1c20', bottomslow992mh: '#3a2418', planb862ml: '#14306a', troy612: '#5a1a22' }[look.rod] || '#1a1d22';
     const rodM = new THREE.MeshPhysicalMaterial({ color: rodC, roughness: 0.25, clearcoat: 0.8 });
     this.rod = new THREE.Group();
     this.rod.position.set(0.25, 0.44, 0.12);
     this.root.add(this.rod);
     add(this.rod, new THREE.CylinderGeometry(0.01, 0.017, 1.4, 8), rodM, 0, 0.45, 0);
     add(this.rod, new THREE.CylinderGeometry(0.022, 0.022, 0.25, 10), toy('#3a2a20', 0.8), 0, 0.05, 0);
-    const reel = add(this.rod, new THREE.CylinderGeometry(0.045, 0.045, 0.05, 16), toy({ basic: '#8f979f', ultegra: '#cfd6dc', stella: '#d9c27a', vanquish: '#3b4f7a' }[look.reel] || '#b9c2cc', 0.25), 0.05, 0.22, 0);
+    const reel = add(this.rod, new THREE.CylinderGeometry(0.045, 0.045, 0.05, 16), toy({ stella: '#d9c27a', vanford: '#2c2e33', ultegra: '#cfd6dc', airity: '#8f9cad' }[look.reel] || '#b9c2cc', 0.25), 0.05, 0.22, 0);
     reel.rotation.z = Math.PI / 2;
     this.rodTipSeg = new THREE.Group();
     this.rodTipSeg.position.y = 1.15;

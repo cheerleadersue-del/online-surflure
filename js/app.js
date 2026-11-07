@@ -57,6 +57,8 @@ const st = {
   hideAvatar: true,
   playing: false,
 };
+// 예전에 저장된 장비(없어진 것)는 기본값으로
+for (const k of Object.keys(GEAR)) if (!GEAR[k].some((g) => g.id === st.gear[k])) st.gear[k] = DEFAULT_GEAR[k];
 let creel = load('surflure.creel', []);
 let timeMode = 'real';
 let walkDir = 0;
