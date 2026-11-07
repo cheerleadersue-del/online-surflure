@@ -361,6 +361,47 @@ export class Landmarks {
     this.scene.add(g);
   }
 
+  // 군남댐: 강을 가로막은 콘크리트 댐, 수문 기둥 사이로 쏟아지는 물
+  dam(X, z0, z1) {
+    const g = new THREE.Group();
+    const conc = std('#d3cfc5', { map: this.assets ? this.assets.tex.concrete.map : null, roughness: 0.9 });
+    const len = z0 - z1, cz = (z0 + z1) / 2;
+    const h = 14;
+    // 댐 몸체 (하류 쪽으로 비스듬한 단면)
+    const body = this.mesh(new THREE.BoxGeometry(10, h, len), conc, 0, h / 2 - 3, cz, g);
+    body.position.x = 0;
+    this.mesh(new THREE.BoxGeometry(14, 2, len + 4), conc, 1, h - 3 + 1, cz, g); // 상부 도로
+    // 수문 기둥과 파란 수문
+    const n = 9;
+    const gateM = std('#2f6fb0', { metalness: 0.4, roughness: 0.5 });
+    const water = new THREE.MeshStandardMaterial({ color: '#dff1f2', transparent: true, opacity: 0.75, roughness: 0.2 });
+    const falls = [];
+    for (let i = 0; i <= n; i++) {
+      const z = z1 + (len / n) * i;
+      this.mesh(new THREE.BoxGeometry(12, 8, 1.6), conc, 0, h - 3 + 5, z, g); // 수문 기둥
+      if (i < n) {
+        const zz = z + len / n / 2;
+        this.mesh(new THREE.BoxGeometry(1, 4.5, len / n - 1.8), gateM, -2, h - 3 + 4, zz, g); // 수문
+        // 수문 아래로 쏟아지는 물
+        const f = this.mesh(new THREE.PlaneGeometry(len / n - 2, h - 2), water, -5.2, (h - 2) / 2 - 3, zz, g);
+        f.rotation.y = -Math.PI / 2;
+        falls.push(f);
+      }
+    }
+    // 권양기 지붕
+    this.mesh(new THREE.BoxGeometry(5, 2.2, len), std('#e9e6de'), 0, h + 7.5, cz, g);
+    // 아래쪽 하얗게 부서지는 물
+    const foam = this.mesh(new THREE.PlaneGeometry(14, len), new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.7 }), -11, 0.08, cz, g);
+    foam.rotation.x = -Math.PI / 2;
+    this.anim.push((t) => {
+      falls.forEach((f, i) => { f.material.opacity = 0.6 + 0.2 * Math.sin(t * 6 + i); });
+      foam.material.opacity = 0.55 + 0.2 * Math.sin(t * 4);
+    });
+    g.position.set(X, 0, 0);
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.scene.add(g);
+  }
+
   // 소양강 스카이워크: 강 위로 뻗은 유리 데크와 쏘가리 조형물
   riverSkywalk(X, zShore, len) {
     const g = new THREE.Group();

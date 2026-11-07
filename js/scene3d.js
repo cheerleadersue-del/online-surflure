@@ -1297,9 +1297,10 @@ export class World {
       switch (pt.mark) {
         case 'riverSkywalk': L.riverSkywalk(X - 6, shoreZ(X), 28); L.bridge('girder', X + 110, shoreZ(X + 110) + 16, farShore(X + 110) - 16); break;
         case 'maiden': L.maiden(X - 26, shoreZ(X - 26) + 5); L.bridge('arch', X + 40, shoreZ(X + 40) + 16, farShore(X + 40) - 16, '#f4f4f0'); break;
+        case 'dam': L.dam(X + 40, shoreZ(X + 40) + 12, farShore(X + 40) - 12); break;
         default: L.bridge(pt.mark, X, z0, z1, red ? '#c8362d' : '#f4f4f0');
       }
-      this.landmarkPos = { x: X, z: (z0 + z1) / 2 };
+      this.landmarkPos = { x: pt.mark === 'dam' ? X + 40 : X, z: (z0 + z1) / 2 };
       this.landmarks = L;
       return;
     }
