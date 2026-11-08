@@ -3019,6 +3019,113 @@ export class World {
     });
   }
 
+  // 옆모습 사진으로 입체 물고기를 만든다 (사진의 윤곽 → 단면 타원, 앞모습에서 잰 두께)
+  // 머리 x=0 → 꼬리 x=L, 등 +y, 옆면 +z. 꼬리 쪽으로 갈수록 크게 휘는 펄떡임은 셰이더에서.
+  makeLoftFish(img, L, { width = 0.128 } = {}) {
+    const W = img.width, H = img.height;
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(img, 0, 0);
+    const A = cx.getImageData(0, 0, W, H).data;
+    const N = 90, Mr = 32;
+    const Lh = (L * H) / W;
+    // 앞모습 기준 두께: 주둥이에서 커지고 몸통 가운데 최대, 꼬리자루에서 가늘고 꼬리지느러미는 얇게
+    const prof = (u) => (u < 0.04 ? 0.25 + u * 8 : u < 0.28 ? 0.57 + (u - 0.04) * 1.8 : u < 0.52 ? 1 : u < 0.8 ? 1 - (u - 0.52) * 2.6 : Math.max(0.05, 0.27 - (u - 0.8) * 1.1));
+    const pos = [], uv = [], idx = [];
+    let last = { top: H / 2, bot: H / 2 };
+    for (let i = 0; i <= N; i++) {
+      const u = i / N, px = Math.min(W - 1, Math.round(u * (W - 1)));
+      let top = -1, bot = -1;
+      for (let y = 0; y < H; y++) if (A[(y * W + px) * 4 + 3] > 120) { if (top < 0) top = y; bot = y; }
+      if (top < 0) { top = last.top; bot = last.bot; } else last = { top, bot };
+      const c = (top + bot) / 2, a = Math.max(1, (bot - top) / 2 + 1.5);
+      const b = width * L * prof(u);
+      for (let j = 0; j <= Mr; j++) {
+        const th = (j / Mr) * Math.PI * 2;
+        const ypx = c - a * Math.cos(th);
+        pos.push(u * L, (0.5 - ypx / H) * Lh, b * Math.sin(th) * (1 - 0.35 * Math.pow(Math.abs(Math.cos(th)), 6)));
+        uv.push(u, 1 - ypx / H);
+      }
+    }
+    for (let i = 0; i < N; i++) for (let j = 0; j < Mr; j++) {
+      const a0 = i * (Mr + 1) + j, a1 = a0 + Mr + 1;
+      idx.push(a0, a1, a0 + 1, a0 + 1, a1, a1 + 1);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  // 황금쏘가리: 입체 몸통 + 펄떡이는 꼬리 + 젖은 금빛 광택
+  showTrophyLoft(fish, url) {
+    this.clearTrophy();
+    const g = new THREE.Group();
+    g.userData = { born: performance.now(), size: fish.size || 40, ready: false };
+    this.camera.add(g);
+    this.trophy = g;
+    this.landing = true;
+    clearTimeout(this.landingT);
+    const tl = this.trophyLoader || (this.trophyLoader = new THREE.TextureLoader());
+    tl.load(url, (tex) => {
+      if (this.trophy !== g) return;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      const vh = 2 * 1.3 * Math.tan(THREE.MathUtils.degToRad((this.portrait ? 92 : 78) / 2));
+      const L = vh * (0.62 + Math.min(0.2, (fish.size || 40) / 450));
+      const geo = this.makeLoftFish(tex.image, L);
+      const uni = { uT: { value: 0 }, uA: { value: 0 }, uC: { value: 0 } };
+      const mat = new THREE.MeshPhysicalMaterial({
+        map: tex, alphaTest: 0.5, side: THREE.DoubleSide,
+        roughness: 0.3, metalness: 0.32, clearcoat: 1, clearcoatRoughness: 0.07,
+        sheen: 0.8, sheenRoughness: 0.35, sheenColor: new THREE.Color('#ffc84a'),
+        iridescence: 0.35, iridescenceIOR: 1.6, iridescenceThicknessRange: [180, 520],
+        emissive: new THREE.Color('#fff2cc'), emissiveMap: tex, emissiveIntensity: 0.16, envMapIntensity: 1.6,
+      });
+      // 펄떡임: 머리는 고정, 꼬리로 갈수록 크게 (물결 + 몸을 C자로 꺾기). 법선도 같이 돌려 광택이 따라 움직이게.
+      const bend = `
+        float fk = clamp(position.x / ${L.toFixed(4)}, 0.0, 1.0);
+        float fw = pow(fk, 1.6);
+        float fz = uA * sin(uT - fk * 5.0) * fw * ${(L * 0.2).toFixed(4)} + uC * fk * fk * ${(L * 0.42).toFixed(4)};
+        float fd = (uA * (1.6 * pow(max(fk, 1e-3), 0.6) * sin(uT - fk * 5.0) - 5.0 * fw * cos(uT - fk * 5.0)) * ${(L * 0.2).toFixed(4)} + uC * 2.0 * fk * ${(L * 0.42).toFixed(4)}) / ${L.toFixed(4)};
+        float fa = atan(fd);`;
+      mat.onBeforeCompile = (sh) => {
+        Object.assign(sh.uniforms, uni);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT, uA, uC;')
+          .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+            ${bend}
+            objectNormal = vec3(objectNormal.x * cos(fa) - objectNormal.z * sin(fa), objectNormal.y, objectNormal.x * sin(fa) + objectNormal.z * cos(fa));`)
+          .replace('#include <begin_vertex>', `#include <begin_vertex>
+            transformed.z += fz;
+            transformed.x -= fz * fd * 0.5;`);
+      };
+      const fishMesh = new THREE.Mesh(geo, mat);
+      fishMesh.rotation.z = -Math.PI / 2; // 머리가 위로 (입이 바늘)
+      fishMesh.renderOrder = 30;
+      fishMesh.position.y = 0.02;
+      g.add(fishMesh);
+      // 비늘에 반짝이는 빛 (펄떡일 때 하이라이트가 미끄러진다)
+      const glint = new THREE.PointLight('#fff1c8', 2.2, 2.5, 1.5);
+      glint.position.set(0.35, -L * 0.3, 0.6);
+      g.add(glint);
+      const line = new THREE.Mesh(new THREE.CylinderGeometry(0.0016, 0.0016, 3, 4), new THREE.MeshBasicMaterial({ color: '#d9f26a' }));
+      line.position.y = 1.5;
+      g.add(line);
+      const dropTex = TX.softDot('235,248,255');
+      const drops = [];
+      for (let i = 0; i < 30; i++) {
+        const d = new THREE.Sprite(new THREE.SpriteMaterial({ map: dropTex, transparent: true, depthWrite: false, opacity: 0 }));
+        d.userData = { life: 0 };
+        g.add(d);
+        drops.push(d);
+      }
+      Object.assign(g.userData, { fishMesh, uni, L, drops, glint, loft: true, ready: true, top: vh * 0.42 });
+    });
+  }
+
   // 그림이 없는 어종(메기 등): 3D 물고기를 같은 방식으로 1인칭 화면 가득
   showTrophy3D(fish) {
     this.clearTrophy();
@@ -3075,6 +3182,18 @@ export class World {
     u.uni.uT.value = t * 16;
     u.uni.uA.value = (0.25 + flop * 1.1) * (0.5 + calm * 0.5);
     u.fishMesh.position.x = flop * 0.03 * Math.sin(t * 20);
+    if (u.loft) {
+      // 가끔 몸을 C자로 확 꺾었다 펴는 큰 펄떡임 (좌우 번갈아)
+      if (!u.nextCurl || age > u.nextCurl) { u.curlT = age; u.curlDir = -(u.curlDir || 1); u.nextCurl = age + 0.9 + Math.random() * 1.4 * (1.5 - calm); }
+      const ck = age - (u.curlT || -9);
+      const curl = ck < 0.45 ? Math.sin((ck / 0.45) * Math.PI) * Math.exp(-ck * 1.5) : 0;
+      u.uni.uC.value = curl * u.curlDir * (0.55 + calm * 0.45);
+      u.uni.uA.value *= 1.15;
+      u.uni.uT.value = t * (12 + curl * 10);
+      g.rotation.y += curl * u.curlDir * 0.35; // 꺾일 때 몸이 돌아 옆구리 광택이 번쩍
+      u.glint.position.x = 0.35 + Math.sin(t * 2.3) * 0.25;
+      u.glint.intensity = 2.2 + curl * 3;
+    }
     // 물방울
     if (Math.random() < dt * 22 * (0.4 + calm)) {
       const d = u.drops.find((x) => x.userData.life <= 0);

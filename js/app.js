@@ -579,7 +579,8 @@ function showCatch(f) {
   const av = st.avatar;
   const img = DATA.fishImage(f.name);
   audio.land && audio.land();
-  if (img) scene.showTrophy(f, img); // 직접 그린 물고기: 1인칭으로 크게
+  if (img && f.name === '황금쏘가리') scene.showTrophyLoft(f, img); // 황금쏘가리: 입체 몸통 + 펄떡임 + 금빛 광택
+  else if (img) scene.showTrophy(f, img); // 직접 그린 물고기: 1인칭으로 크게
   else scene.showTrophy3D(f); // 그림이 없는 어종도 같은 방식
   setTimeout(() => openCatchDialog(f), 3200);
 }
