@@ -1,6 +1,7 @@
 // 3D 바다 월드: 소나무 숲길 → 모랫길 → 해변 → 갯바위 → 방파제 (Three.js)
 import * as THREE from '../vendor/three/three.module.min.js';
 import { Avatar } from './avatar3d.js';
+import { loadFP, FPInstance } from './avatarRig.js';
 import { loadHDR } from './assets.js';
 import { makeRealFish, flop, fishLook } from './fish3d.js';
 import { Landmarks } from './landmarks.js';
@@ -1913,7 +1914,7 @@ export class World {
     const act = this.playerAct && (performance.now() - this.playerAct.t0) / 1000 < this.playerAct.dur ? this.playerAct : null;
     if (av.walking || (fishingPose && !(act && act.name === 'release'))) this.playerAct = null;
     P.pose({ walking: av.walking, phase: av.phase, rodE: pose.rod != null ? -pose.rod : 1.25, bend: pose.bend || 0, noRod: !!pose.noRod || !!(act && act.name === 'release'), t,
-      action: act && act.name, actionT: act ? (performance.now() - act.t0) / 1000 : 0 });
+      action: act && act.name, actionT: act ? (performance.now() - act.t0) / 1000 : 0, fs: fsh.state, pressed: !!fsh.pressed });
     P.group.visible = !st.hideAvatar && !this.fpv;
     P.group.position.set(ax, ay + P.bob, az);
     const yawTarget = fishingPose || st.onBoat ? Math.PI : (av.yaw ?? Math.PI / 2);
@@ -1971,7 +1972,7 @@ export class World {
       if (cyc < 0.6) e = 1.0 + 1.4 * (cyc / 0.6);
       else if (cyc < 0.9) e = 2.4 - 1.9 * ((cyc - 0.6) / 0.3);
       else e = 0.5 + Math.min(1, (cyc - 0.9) / 6) * 0.3;
-      a.pose({ rodE: e, t: t + i });
+      a.pose({ rodE: e, t: t + i, fs: cyc < 0.6 ? 'charging' : cyc < 0.9 ? 'flying' : 'waiting' });
       a.group.position.set(nx, n.Y, n.Z);
       a.group.rotation.y = Math.PI;
       // 1인칭일 때 바로 옆 사람은 시야를 가리지 않게 숨긴다
@@ -2335,10 +2336,41 @@ export class World {
     return this.vmKey('wait');
   }
 
+  // 1인칭: 캐릭터 키트의 팔·장비 모델 (불러왔으면 직접 만든 팔 대신 사용)
+  fpRigView(t, dt) {
+    const P = this.player;
+    if (!P || !P.isRig) return false;
+    const kind = P.look.pants === 'wader' ? 'wader' : P.look.pants === 'shorts' ? 'basic' : 'boots';
+    if (this.fpKind !== kind) {
+      this.fpKind = kind;
+      if (this.fpInst) { this.camera.remove(this.fpInst.holder); this.fpInst = null; }
+      loadFP(kind).then((T) => {
+        if (!T || this.fpKind !== kind) return;
+        this.fpInst = new FPInstance(T);
+        this.fpInst.holder.visible = false;
+        this.camera.add(this.fpInst.holder);
+      });
+    }
+    const F = this.fpInst;
+    if (!F) return false;
+    const on = !!this.fpv && !this.trophy;
+    F.holder.visible = on;
+    if (!on) return !!this.fpv; // 물고기 들어 보이는 중엔 팔을 숨긴다
+    const vp = this.vmPose || {};
+    const fi = this.fightInfo;
+    const fs = this.landing ? 'result' : vp.state;
+    F.drive({ fs, pressed: !!(vp.pressed || (fi && fi.pressed)), dt, anim: (this.fpAnim ||= {}) });
+    F.align();
+    const lineTarget = this.landing && this.caught ? this.caught.getWorldPosition(new THREE.Vector3()) : this.fpTarget;
+    this.vmLine((F.tipBone || F.root).getWorldPosition(new THREE.Vector3()), lineTarget, vp, fi);
+    return true;
+  }
+
   updateViewModel(t, dt) {
     const vm = this.vm;
     if (!vm) return;
     vm.visible = !!this.fpv && !this.trophy;
+    if (this.fpRigView(t, dt)) { vm.visible = false; return; }
     if (!this.fpv) { this.vmCur = null; return; }
     // 해변 포인트의 모래 해변 구간이면 서프 스타일
     const onSand = !!this.player && !MODE.river && !MODE.sihwa && this.player.group.position.x < LAY.peb0;
@@ -2449,7 +2481,10 @@ export class World {
       this.vmWatch.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shL.clone().sub(LH).normalize());
     }
     // 낚싯줄: 초리 → 루어/물고기
-    const tw = this.vmTip.getWorldPosition(new THREE.Vector3());
+    this.vmLine(this.vmTip.getWorldPosition(new THREE.Vector3()), lineTarget, vp, fi);
+  }
+
+  vmLine(tw, lineTarget, vp, fi) {
     if (lineTarget && vp.state !== 'charging') {
       const mouth = this.landing && this.caught ? new THREE.Vector3(-0.45 * this.caught.userData.sizeM, 0, 0).applyMatrix4(this.caught.matrixWorld) : lineTarget;
       this.setLine(tw, mouth, fi ? (1 - fi.tension) * 1.2 : this.landing ? 0.05 : 1.6);
@@ -2699,7 +2734,7 @@ export class World {
       if (st.w) pa.phase += dt * 10;
       const act = st.act && st.actT != null ? st.act : null;
       pa.a.pose({ walking: !!st.w, phase: pa.phase, rodE: st.rod != null ? -st.rod : 1.25, bend: st.bend || 0, noRod: !!st.noRod, t: t + pa.X,
-        action: act, actionT: act ? (Date.now() - st.actT) / 1000 : 0 });
+        action: act, actionT: act ? (Date.now() - st.actT) / 1000 : 0, fs: st.f || null, pressed: st.f === 'fight' });
       pa.a.group.position.set(pa.X, pa.Y + pa.a.bob, pa.Z);
       pa.a.group.visible = !(this.fpv && this.player && Math.hypot(pa.X - this.player.group.position.x, pa.Z - this.player.group.position.z) < 2.2);
       pa.a.group.rotation.y = pa.yaw;

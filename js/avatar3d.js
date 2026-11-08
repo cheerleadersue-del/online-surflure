@@ -3,6 +3,7 @@ import * as THREE from '../vendor/three/three.module.min.js';
 import { nameTexture, bubbleTexture } from './textures.js';
 
 import { loadAvatarModels } from './avatarModel.js';
+import { loadRigs, RigInstance } from './avatarRig.js';
 
 const SKIN = '#f6d2b4';
 const fabric = (color) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.75, sheen: 0.6, sheenRoughness: 0.6, sheenColor: new THREE.Color('#ffffff') });
@@ -11,6 +12,7 @@ const toy = (color, rough = 0.45) => new THREE.MeshPhysicalMaterial({ color, rou
 export class Avatar {
   static assets = null;
   static models = null; // 직접 디자인한 3D 모델 (불러오면 ver가 올라간다)
+  static rigs = null; // 뼈대·애니메이션이 들어간 모델 (있으면 이것을 쓴다)
   static ver = 0;
   static loading = true; // 디자인 모델을 불러오는 중
 
@@ -49,9 +51,11 @@ export class Avatar {
     const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
     const cap = (r, l) => new THREE.CapsuleGeometry(r, l, 6, 14);
 
-    const M = Avatar.models && Avatar.models[kind];
-    this.waiting = !M && Avatar.loading; // 디자인 모델을 기다리는 중 (임시 아바타를 보이지 않게)
-    if (M) this.buildModel(M);
+    const T = Avatar.rigs && Avatar.rigs[kind];
+    const M = !T && Avatar.models && Avatar.models[kind];
+    this.waiting = !T && !M && Avatar.loading; // 디자인 모델을 기다리는 중 (임시 아바타를 보이지 않게)
+    if (T) this.buildRig(T);
+    else if (M) this.buildModel(M);
     else {
     // 몸 전체를 흔들기 위한 뿌리
     const root = (this.root = new THREE.Group());
@@ -223,6 +227,7 @@ export class Avatar {
     this.tip.position.y = 1.5;
     this.rodTipSeg.add(this.tip);
 
+    if (T) this.rod.visible = false; // 애니메이션 모델은 자기 낚싯대를 쓴다
     if (M) {
       // 모델: 낚싯대를 오른손에 쥔다
       const s2 = M.scale, pv = M.pivots.armR, h = M.hand;
@@ -234,6 +239,46 @@ export class Avatar {
     if (this.waiting) this.root.visible = false;
     this.setName(name);
     if (this.waiting && this.nameSprite) this.nameSprite.visible = false;
+  }
+
+  // 뼈대·애니메이션 모델 (Explorer Game Animation Kit)
+  buildRig(T) {
+    this.isRig = true;
+    const root = (this.root = new THREE.Group());
+    this.group.add(root);
+    this.rig = new RigInstance(T);
+    root.add(this.rig.root);
+    const dummy = () => { const g = new THREE.Group(); root.add(g); return g; };
+    this.head = dummy();
+    // 1인칭 카메라 자리 (눈 높이)
+    this.head.position.set(T.eye.x * T.scale, (T.eye.y - T.minY) * T.scale - 0.05, T.eye.z * T.scale);
+    this.arms = [dummy(), dummy()];
+    this.legs = [dummy(), dummy()];
+    this.eyes = [];
+    this.lensM = null;
+    const lamp = (this.lampG = new THREE.Group());
+    lamp.position.set(0, 1.25, 0.32);
+    root.add(lamp);
+    this.makeBeam(lamp);
+    this.bob = 0;
+  }
+
+  // 게임 상태 → 동작 클립
+  rigPose(o) {
+    const { walking = false, t = 0, action = null, fs = null, pressed = false, noRod = false } = o;
+    if (this.bubble && performance.now() > this.bubble.userData.until) { this.group.remove(this.bubble); this.bubble = null; }
+    const dt = this.lastT == null ? 0 : Math.min(0.1, Math.max(0, t - this.lastT));
+    this.lastT = t;
+    const R = this.rig;
+    R.drive({ walking, action, fs, pressed, dt, anim: this });
+    if (noRod && R.rodBone) R.rodBone.scale.multiplyScalar(0.0001);
+    // 헤드랜턴 빛줄기는 랜턴 위치를 따라간다
+    if (this.lampOn && R.lampBone) {
+      this.group.updateMatrixWorld(true);
+      R.lampBone.getWorldPosition(this.lampG.position);
+      this.root.worldToLocal(this.lampG.position);
+    }
+    this.bob = 0;
   }
 
   // 직접 디자인한 3D 모델로 몸을 만든다 (부위별로 나뉘어 움직임)
@@ -299,8 +344,12 @@ export class Avatar {
   setLamp(on) {
     on = !!on;
     if (this.lampOn === on) return;
+    const first = this.lampOn === undefined;
     this.lampOn = on;
-    this.lensM.emissiveIntensity = on ? 4 : 0;
+    if (this.isRig) {
+      this.rig.lens.forEach((m) => { m.emissive = new THREE.Color('#fff1c4'); m.emissiveIntensity = on ? 4 : 0; });
+      if (!first) this.lampAnim = on ? 'Headlamp_On' : 'Headlamp_Off'; // 랜턴을 켜고 끄는 손동작
+    } else this.lensM.emissiveIntensity = on ? 4 : 0;
     this.beam.visible = on;
   }
 
@@ -341,6 +390,7 @@ export class Avatar {
   // rodE: 낚싯대 앙각(라디안), bend: 휨 0..1
   // action: bow(인사) · wave(손흔들기) · sit(앉기) · highfive · castle(모래성), actionT: 시작 후 초
   pose({ walking = false, phase = 0, rodE = 1.25, bend = 0, noRod = false, t = 0, action = null, actionT = 0 }) {
+    if (this.isRig) return this.rigPose(arguments[0] || {});
     if (this.bubble && performance.now() > this.bubble.userData.until) { this.group.remove(this.bubble); this.bubble = null; }
     const sw = walking ? Math.sin(phase) : 0;
     this.root.position.y = 0;
@@ -406,6 +456,7 @@ export class Avatar {
   }
 
   tipWorld(v = new THREE.Vector3()) {
+    if (this.isRig && this.rig.tipBone) return this.rig.tipBone.getWorldPosition(v);
     return this.tip.getWorldPosition(v);
   }
 }
@@ -489,11 +540,13 @@ export class AvatarPreview {
   }
 }
 
-// 디자인 모델 미리 불러오기
-loadAvatarModels().then((m) => {
-  if (m && Object.keys(m).length) Avatar.models = m;
-}).finally(() => {
-  // 성공하면 디자인 모델로, 실패하면 임시 아바타라도 보이게 다시 만든다
-  Avatar.loading = false;
-  Avatar.ver++;
-});
+// 디자인 모델 미리 불러오기: 애니메이션 모델을 먼저, 안 되면 정지 모델
+loadRigs().then((r) => {
+  if (r && Object.keys(r).length === 3) { Avatar.rigs = r; return null; }
+  return loadAvatarModels().then((m) => { if (m && Object.keys(m).length) Avatar.models = m; });
+}).catch(() => loadAvatarModels().then((m) => { if (m && Object.keys(m).length) Avatar.models = m; }))
+  .finally(() => {
+    // 준비가 끝나면 (실패하면 임시 아바타라도) 다시 만든다
+    Avatar.loading = false;
+    Avatar.ver++;
+  });
