@@ -25,6 +25,7 @@ function plainGeo(g, keepColor, remap, bindMat) {
   n.setAttribute('position', floatAttr(g.attributes.position));
   n.setAttribute('normal', floatAttr(g.attributes.normal));
   if (keepColor && g.attributes.color) n.setAttribute('color', floatAttr(g.attributes.color, 4));
+  if (g.attributes.uv) n.setAttribute('uv', floatAttr(g.attributes.uv)); // 텍스처가 있는 모델(v3)용
   const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
   const idx = new Uint16Array(si.count * 4);
   // 부품마다 뼈 번호가 달라서 공통 뼈대 번호로 바꾼다
@@ -81,6 +82,7 @@ function prepare(gltf) {
   for (const { mat, list } of groups.values()) {
     const keepColor = list.every((x) => x.geo.attributes.color);
     const geos = list.map((x) => plainGeo(x.geo, keepColor, x.remap, x.bindMat));
+    if (!geos.every((g) => g.attributes.uv)) geos.forEach((g) => g.deleteAttribute('uv'));
     // 키는 몸(장비 제외)으로 잰다
     geos.forEach((g, i) => { if (!GEAR_PART.test(list[i].name)) { g.computeBoundingBox(); box.union(g.boundingBox); } });
     const merged = mergeGeometries(geos, false);
