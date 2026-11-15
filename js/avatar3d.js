@@ -227,7 +227,7 @@ export class Avatar {
     this.tip.position.y = 1.5;
     this.rodTipSeg.add(this.tip);
 
-    if (T) this.rod.visible = false; // 애니메이션 모델은 자기 낚싯대를 쓴다
+    if (T && !T.handRod) this.rod.visible = false; // 애니메이션 모델은 자기 낚싯대를 쓴다 (v3는 게임 낚싯대를 손에)
     if (M) {
       // 모델: 낚싯대를 오른손에 쥔다
       const s2 = M.scale, pv = M.pivots.armR, h = M.hand;
@@ -272,11 +272,21 @@ export class Avatar {
     const R = this.rig;
     R.drive({ walking, action, fs, pressed, dt, anim: this });
     if (noRod && R.rodBone) R.rodBone.scale.multiplyScalar(0.0001);
+    // v3: 게임 낚싯대를 오른손 위치에 붙인다
+    if (R.T.handRod && R.handBone) {
+      this.rod.visible = !noRod;
+      this.group.updateMatrixWorld(true);
+      R.handBone.getWorldPosition(this.rod.position);
+      this.root.worldToLocal(this.rod.position);
+      this.rod.rotation.set(Math.PI / 2 - (o.rodE ?? 1.25), 0, 0);
+      this.rod.position.y -= 0.12; // 손잡이 가운데를 쥐도록
+    }
     // 헤드랜턴 빛줄기는 랜턴 위치를 따라간다
     if (this.lampOn && R.lampBone) {
       this.group.updateMatrixWorld(true);
       R.lampBone.getWorldPosition(this.lampG.position);
       this.root.worldToLocal(this.lampG.position);
+      if (R.T.v3) this.lampG.position.add(new THREE.Vector3(0, 0.2, 0.14)); // 머리 뼈 → 모자 앞 랜턴
     }
     this.bob = 0;
   }

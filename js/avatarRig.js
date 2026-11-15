@@ -25,6 +25,7 @@ function plainGeo(g, keepColor, remap, bindMat) {
   n.setAttribute('position', floatAttr(g.attributes.position));
   n.setAttribute('normal', floatAttr(g.attributes.normal));
   if (keepColor && g.attributes.color) n.setAttribute('color', floatAttr(g.attributes.color, 4));
+  if (g.attributes.uv) n.setAttribute('uv', floatAttr(g.attributes.uv)); // 텍스처가 있는 모델(v3)용
   const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
   const idx = new Uint16Array(si.count * 4);
   // 부품마다 뼈 번호가 달라서 공통 뼈대 번호로 바꾼다
@@ -81,6 +82,7 @@ function prepare(gltf) {
   for (const { mat, list } of groups.values()) {
     const keepColor = list.every((x) => x.geo.attributes.color);
     const geos = list.map((x) => plainGeo(x.geo, keepColor, x.remap, x.bindMat));
+    if (!geos.every((g) => g.attributes.uv)) geos.forEach((g) => g.deleteAttribute('uv'));
     // 키는 몸(장비 제외)으로 잰다
     geos.forEach((g, i) => { if (!GEAR_PART.test(list[i].name)) { g.computeBoundingBox(); box.union(g.boundingBox); } });
     const merged = mergeGeometries(geos, false);
@@ -100,13 +102,31 @@ function prepare(gltf) {
   return { scene, clips: gltf.animations, scale: RIG_HEIGHT / h, minY: box.min.y, eye };
 }
 
+// ── 직접 만든 v3 아바타 (Tripo, 뼈 78개·동작 13개). 주소에 ?avatar=v3 를 붙이면 이 아바타로 ──
+const V3_BASE = new URL('../assets/avatar/v3/', import.meta.url).href;
+export const V3_FILES = { basic: '01_tshirt.glb', boots: '02_knee_boots.glb', wader: '03_waders.glb' };
+// 게임 동작 이름 → v3 파일의 동작 이름
+const V3_CLIPS = {
+  Idle: 'Stay', Walk: 'Walk', Wave: 'Greet', Fish_CastReady: 'CastReady', Fish_Cast: 'Cast', Fish_Jerk: 'Jerking',
+  Fish_Stay: 'Stay', Fish_Hit: 'Hit', Fish_Reel: 'Reeling', Fish_Wind_In: 'ReelWind', Fish_Land: 'Landing',
+  Sit: 'Sit', Climb_Up: 'ClimbUp', Climb_Down: 'ClimbDown',
+};
+export const useV3 = () => { try { return /(^|[?&])avatar=v3\b/.test(location.search) || localStorage.getItem('surflure.avatar') === 'v3'; } catch (_) { return false; } };
+
 let cache = null;
 export function loadRigs() {
   if (cache) return cache;
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
-  cache = Promise.all(Object.entries(RIG_FILES).map(([kind, file]) => loader.loadAsync(BASE + file)
-    .then((g) => [kind, prepare(g)])
+  const v3 = useV3();
+  const files = v3 ? V3_FILES : RIG_FILES;
+  const base = v3 ? V3_BASE : BASE;
+  cache = Promise.all(Object.entries(files).map(([kind, file]) => loader.loadAsync(base + file)
+    .then((g) => {
+      const T = prepare(g);
+      if (v3) Object.assign(T, { clipMap: V3_CLIPS, rotY: -Math.PI / 2, handRod: true, v3: true }); // +X를 보고 있어서 돌린다, 낚싯대는 게임 것을 손에
+      return [kind, T];
+    })
     .catch((e) => { console.warn('애니메이션 캐릭터 불러오기 실패', kind, e); return [kind, null]; })))
     .then((list) => Object.fromEntries(list.filter(([, v]) => v)));
   return cache;
@@ -122,7 +142,11 @@ export class RigInstance {
     this.mixer = new THREE.AnimationMixer(this.root);
     this.actions = {};
     for (const c of T.clips) this.actions[c.name] = this.mixer.clipAction(c);
+    // 파일마다 다른 동작 이름을 게임 이름으로 연결
+    for (const [game, file] of Object.entries(T.clipMap || {})) if (this.actions[file]) this.actions[game] = this.actions[file];
+    if (T.rotY) this.root.rotation.y = T.rotY;
     this.bone = (n) => this.root.getObjectByName(n);
+    this.handBone = this.bone('R_Hand') || this.bone('HandR');
     this.rodBone = this.bone('Rod');
     this.tipBone = this.bone('RodFlex05') || this.rodBone;
     this.lampBone = this.bone('Lamp') || this.bone('Head');
@@ -164,8 +188,10 @@ export class RigInstance {
     }
     let want = 'Idle', once = false, speed = 1;
     if (action === 'wave' || action === 'bow' || action === 'highfive') { want = 'Wave'; once = true; }
+    else if ((action === 'sit' || action === 'castle') && this.actions.Sit) { want = 'Sit'; once = true; }
     else if (walking) { want = 'Walk'; anim.oneShot = null; anim.lampAnim = null; }
     else if (anim.oneShot) { want = anim.oneShot; once = true; }
+    else if (f === 'charging' && this.actions.Fish_CastReady) { want = 'Fish_CastReady'; once = true; } // 캐스팅 준비 자세
     else if (f === 'charging' || f === 'flying') { want = 'Fish_Cast'; once = true; }
     else if (f === 'retrieve') want = pressed ? 'Fish_Jerk' : 'Fish_Stay';
     else if (f === 'waiting' || f === 'bite') want = 'Fish_Stay';
