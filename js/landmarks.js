@@ -152,6 +152,34 @@ export class Landmarks {
     this.add(g, x, z, -0.2);
   }
 
+  // 바닷가 절벽 위 절집 (동해안 해안 사찰 느낌): 붉은 기둥, 흰 벽, 청록 단청, 처마가 들린 기와지붕, 돌 축대
+  temple(x, z, s = 1) {
+    const g = new THREE.Group();
+    const red = std('#9b2d22', { roughness: 0.7 });
+    const wall = std('#f1ece0', { roughness: 0.85 });
+    const dan = std('#3f7f6e', { roughness: 0.6 });
+    const roofM = std('#3a424b', { roughness: 0.55 });
+    const stone = std('#a49c90', { map: this.assets ? this.assets.tex.rock.map : null, roughness: 0.95 });
+    this.mesh(new THREE.BoxGeometry(16 * s, 2.4, 11 * s), stone, 0, 1.2, 0, g); // 돌 축대
+    this.mesh(new THREE.BoxGeometry(12 * s, 0.5, 7.4 * s), std('#cfc6b6'), 0, 2.65, 0, g); // 기단
+    this.mesh(new THREE.BoxGeometry(10.4 * s, 3.6 * s, 5.6 * s), wall, 0, 2.9 + 1.8 * s, 0, g);
+    for (let i = 0; i < 6; i++) for (const zz of [-1, 1]) this.mesh(new THREE.CylinderGeometry(0.24 * s, 0.26 * s, 3.8 * s, 10), red, (-5 + i * 2) * s, 2.9 + 1.9 * s, zz * 2.9 * s, g);
+    this.mesh(new THREE.BoxGeometry(11 * s, 0.6 * s, 6.4 * s), dan, 0, 2.9 + 4 * s, 0, g); // 단청 띠
+    // 팔작지붕 비슷하게: 넓은 아래 지붕(처마 들림) + 위 용마루
+    const roof = this.mesh(new THREE.CylinderGeometry(0.8 * s, 9.5 * s, 3.2 * s, 4, 1, true), roofM, 0, 2.9 + 5.8 * s, 0, g);
+    roof.rotation.y = Math.PI / 4;
+    roof.scale.set(1, 1, 0.62);
+    roof.material.side = THREE.DoubleSide;
+    const rp = roof.geometry.attributes.position;
+    for (let i = 0; i < rp.count; i++) if (rp.getY(i) < 0) rp.setY(i, rp.getY(i) + 0.5 * s * Math.abs(Math.sin(Math.atan2(rp.getZ(i), rp.getX(i)) * 2)));
+    roof.geometry.computeVertexNormals();
+    this.mesh(new THREE.BoxGeometry(7 * s, 0.5 * s, 0.6 * s), roofM, 0, 2.9 + 7.5 * s, 0, g); // 용마루
+    // 돌계단
+    for (let i = 0; i < 5; i++) this.mesh(new THREE.BoxGeometry(3 * s, 0.5, 1), std('#bdb4a6'), 0, 0.25 + i * 0.5, 6 * s + 2.5 - i * 0.8, g);
+    this.add(g, x, z, -0.4);
+    return g;
+  }
+
   // 망상: 알록달록 캠핑 오두막
   cabins(x, z) {
     const g = new THREE.Group();
