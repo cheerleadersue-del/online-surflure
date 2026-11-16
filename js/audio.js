@@ -292,6 +292,7 @@ export class SoundScape {
         this._tone('sine', 140 + Math.random() * 30, 90, 0.22, 0.002, 0.12);
         this._burst(this.white, 'bandpass', 900, 2, 0.06, 0.002, 0.05);
         break;
+      case 'steel':
       case 'concrete':
         this._burst(this.brown, 'lowpass', 400, 1, 0.3, 0.002, 0.06);
         this._click(0.06, 2800);

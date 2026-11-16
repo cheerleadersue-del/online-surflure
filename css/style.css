@@ -64,8 +64,8 @@ button { cursor: pointer; }
 .hud-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.8rem; opacity: 0.92; margin: 4px 0 6px; align-items: center; }
 .pill { background: rgba(255, 255, 255, 0.18); padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; }
 .pill.cloud { background: #2aa198; }
-#time-mode { background: rgba(255, 255, 255, 0.15); color: #fff; border: 0; border-radius: 8px; padding: 4px 6px; font-size: 0.8rem; }
-#time-mode option { color: #111; }
+#time-mode, #sea-mode { background: rgba(255, 255, 255, 0.15); color: #fff; border: 0; border-radius: 8px; padding: 4px 6px; font-size: 0.8rem; }
+#time-mode option, #sea-mode option { color: #111; }
 .hud-actions { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 60vw; }
 .hud-actions button:not(.btn-primary) {
   background: var(--glass); color: #fff; border: 0; border-radius: 999px; padding: 9px 14px; backdrop-filter: blur(6px); font-weight: 600;
@@ -238,7 +238,7 @@ button { cursor: pointer; }
   .toast { bottom: 50%; }
   .hud-meta { font-size: 0.72rem; margin: 2px 0 4px; }
   .hud-line { font-size: 0.68rem; }
-  #time-mode { font-size: 0.72rem; padding: 2px 4px; }
+  #time-mode, #sea-mode { font-size: 0.72rem; padding: 2px 4px; }
   .method-tabs button { padding: 5px 2px; font-size: 0.76rem; }
   .fish-msg { font-size: 0.78rem; margin: 6px 2px; }
   .gauges { margin-bottom: 6px; }
