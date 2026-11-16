@@ -158,9 +158,20 @@ export class Landmarks {
     const red = std('#9b2d22', { roughness: 0.7 });
     const wall = std('#f1ece0', { roughness: 0.85 });
     const dan = std('#3f7f6e', { roughness: 0.6 });
-    const roofM = std('#3a424b', { roughness: 0.55 });
+    const roofM = std('#2f7a72', { roughness: 0.45 }); // 사진처럼 청록 기와
     const stone = std('#a49c90', { map: this.assets ? this.assets.tex.rock.map : null, roughness: 0.95 });
+    const white = std('#efeee8', { roughness: 0.7 });
     this.mesh(new THREE.BoxGeometry(16 * s, 2.4, 11 * s), stone, 0, 1.2, 0, g); // 돌 축대
+    // 축대 둘레 흰 돌난간 (뒤쪽 계단 자리만 비움)
+    const hw = 8 * s - 0.2, hd = 5.5 * s - 0.2;
+    const rail = (x0, z0, x1, z1) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 1.4));
+      for (let i = 0; i <= n; i++) this.mesh(new THREE.BoxGeometry(0.2, 1, 0.2), white, x0 + (x1 - x0) * i / n, 2.9, z0 + (z1 - z0) * i / n, g);
+      const bar = this.mesh(new THREE.BoxGeometry(len + 0.2, 0.16, 0.24), white, (x0 + x1) / 2, 3.4, (z0 + z1) / 2, g);
+      bar.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+    };
+    rail(-hw, -hd, hw, -hd); rail(-hw, -hd, -hw, hd); rail(hw, -hd, hw, hd);
+    rail(-hw, hd, -2, hd); rail(2, hd, hw, hd);
     this.mesh(new THREE.BoxGeometry(12 * s, 0.5, 7.4 * s), std('#cfc6b6'), 0, 2.65, 0, g); // 기단
     this.mesh(new THREE.BoxGeometry(10.4 * s, 3.6 * s, 5.6 * s), wall, 0, 2.9 + 1.8 * s, 0, g);
     for (let i = 0; i < 6; i++) for (const zz of [-1, 1]) this.mesh(new THREE.CylinderGeometry(0.24 * s, 0.26 * s, 3.8 * s, 10), red, (-5 + i * 2) * s, 2.9 + 1.9 * s, zz * 2.9 * s, g);
