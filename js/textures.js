@@ -258,3 +258,15 @@ export function bubbleTexture(text) {
   t.colorSpace = THREE.SRGBColorSpace;
   return { tex: t, aspect: c.width / c.height };
 }
+
+// 철제 격자 바닥(그레이팅): 바다가 내려다보이는 산책로
+export function grateTexture() {
+  const [c, g] = canvas(128, 128);
+  g.fillStyle = '#5d6268';
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#1b2a33';
+  for (let y = 4; y < 128; y += 16) for (let x = 3; x < 128; x += 8) g.fillRect(x, y, 4, 11);
+  g.fillStyle = 'rgba(255,255,255,0.12)';
+  for (let x = 0; x < 128; x += 8) g.fillRect(x, 0, 1, 128);
+  return tex(c, 1);
+}

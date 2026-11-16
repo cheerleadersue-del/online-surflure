@@ -281,6 +281,7 @@ function enterSea() {
   setZonesFor(st.point);
   fishing.gear = { rod: gearOf('rod', st.gear.rod), reel: gearOf('reel', st.gear.reel), bait: gearOf('bait', st.gear.bait), outfit: gearOf('outfit', st.gear.outfit) };
   scene.setPoint(st.point, st.line);
+  scene.setSea(seaMode);
   scene.setGearLook(st.gear);
   scene.wade = fishing.gear.outfit.wade;
   // 쏘가리·배스(민물)는 서프루어만
@@ -809,6 +810,22 @@ $('#btn-sound').addEventListener('click', (e) => {
 });
 $('#btn-home').addEventListener('click', goHome);
 $('#time-mode').addEventListener('change', (e) => { timeMode = e.target.value; });
+// 바다 상태 (잔잔/보통/바람) — 이 브라우저에 기억
+let seaMode = 'auto';
+try { seaMode = localStorage.getItem('surflure.sea') || 'auto'; } catch (e) { /* 저장 불가 */ }
+$('#sea-mode').value = seaMode;
+scene.setSea(seaMode);
+$('#sea-mode').addEventListener('change', (e) => {
+  seaMode = e.target.value;
+  try { localStorage.setItem('surflure.sea', seaMode); } catch (err) { /* 저장 불가 */ }
+  const now = scene.setSea(seaMode);
+  toast({ calm: '🫧 잔잔한 바다', normal: '🌊 보통 바다', windy: '💨 바람 부는 바다 — 흰 파도가 높아요' }[now]);
+});
+// 숨은 명소 발견
+window.addEventListener('surf:discover', (e) => {
+  const d = e.detail;
+  toast(`✨ 숨은 명소 발견! ${d.name} (${d.n}/${d.total})`);
+});
 
 let toastT = 0;
 function toast(msg) {
