@@ -126,6 +126,25 @@ export function groundY(X) {
 // 동해 절벽 정자 자리와 해변에서 올라가는 데크계단
 const EAST_PAV = { x: 424, z: 10 };
 const EAST_STAIR = { x0: 360, x1: 403, z: 6, w: 2.2 };
+// 풀밭 해안 언덕길 (키 아트 14b): 계단 꼭대기 → 정자 뒤 → 언덕 위 풍차
+const HILL_PATH = [[406, 7], [410, 15], [409, 25], [414, 35], [422, 44], [427, 52]];
+const WINDMILL = { x: 429, z: 58 };
+function hillPathDist(X, Z) {
+  let best = 1e9;
+  for (let i = 0; i < HILL_PATH.length - 1; i++) {
+    const [ax, az] = HILL_PATH[i], [bx, bz] = HILL_PATH[i + 1];
+    const dx = bx - ax, dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((X - ax) * dx + (Z - az) * dz) / (dx * dx + dz * dz)));
+    best = Math.min(best, Math.hypot(X - ax - dx * t, Z - az - dz * t));
+  }
+  return best;
+}
+// 풀밭(초원) 정도: 언덕길 둘레와 풍차 둘레는 나무 없이 풀과 들꽃
+function meadowK(X, Z) {
+  if (!MODE.east || X < 392 || X > 452 || Z < 3 || Z > 82) return 0;
+  const d = Math.min(hillPathDist(X, Z), Math.hypot(X - WINDMILL.x, Z - WINDMILL.z) - 4);
+  return 1 - smooth(11, 19, d);
+}
 const pinePathZ = (X) => 21 + Math.sin(X * 0.03) * 2;
 // 유채꽃밭: 해수욕장 뒤, 기찻길 양옆 (키 아트 전체 전경 기준)
 const CANOLA = { x0: 108, x1: 204, z1: 60 };
@@ -282,8 +301,10 @@ export class World {
     for (let z = -440; z < -80; z += 8) zs.push(z);
     for (let z = -80; z < -40; z += 3) zs.push(z);
     for (let z = -40; z < 30; z += 1) zs.push(z);
-    for (let z = 30; z <= 160; z += 3) zs.push(z);
+    for (let z = 30; z < 66; z += 1.5) zs.push(z); // 걸을 수 있는 뒤쪽(언덕길)은 촘촘하게
+    for (let z = 66; z <= 160; z += 3) zs.push(z);
     const nx = xs.length, nz = zs.length;
+    this.terrGrid = { xs, zs };
     const pos = new Float32Array(nx * nz * 3);
     const col = new Float32Array(nx * nz * 3);
     const uv = new Float32Array(nx * nz * 2);
@@ -367,6 +388,8 @@ export class World {
           if (f > 0.3 && hh2 < 2) c.lerp(new THREE.Color(0.66, 0.5, 0.36), f * (1 - pathK * 0.7));
           if (hh2 > 2 || (dz > 24 && f < 1)) c.lerp(new THREE.Color(0.62, 0.8, 0.5), Math.max(smooth(2, 6, hh2), smooth(24, 34, dz) * (1 - f)) * 0.8);
           if (dz < 0) c.multiplyScalar(lerp(0.85, 0.45, smooth(0, 12, -dz)));
+          const mk = meadowK(X, Z);
+          if (mk > 0) c.lerp(new THREE.Color(0.62, 1.0, 0.36).multiplyScalar(0.9 + n * 0.2), mk * 0.85);
         }
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
       }
@@ -730,7 +753,7 @@ export class World {
         // 절벽 위 소나무 숲 (정자 터와 데크계단은 비워 둔다)
         const CT = cliffTop();
         place(LAY.deck0 - 12, LAY.deck1 - 2, 2, 46, 3.6, (X, Z) => (cliffH(X, Z) > CT * 0.55 ? 0.92 : 0), 8, 14,
-          (X, Z) => (Math.abs(X - EAST_PAV.x) < 11 && Math.abs(Z - EAST_PAV.z) < 8) || (Z < EAST_STAIR.z + 3 && Z > EAST_STAIR.z - 3 && X < EAST_STAIR.x1 + 5) || Z - shoreZ(X) < 10.8);
+          (X, Z) => (Math.abs(X - EAST_PAV.x) < 11 && Math.abs(Z - EAST_PAV.z) < 8) || (Z < EAST_STAIR.z + 3 && Z > EAST_STAIR.z - 3 && X < EAST_STAIR.x1 + 5) || Z - shoreZ(X) < 10.8 || meadowK(X, Z) > 0.35);
       } else {
         // 절벽 위 소나무 (데크길 뒤)
         place(LAY.deck0 + 6, LAY.deck1 - 6, 3, 40, 6, (X, Z) => (cliffH(X, Z) > 6 ? 0.7 : 0), 7, 12);
@@ -803,7 +826,7 @@ export class World {
     for (let i = 0; i < 900; i++) {
       const X = 360 + r() * 300, Z = 30 + r() * 120;
       const hh = hillH(X, Z);
-      if (hh < 3 || crowns.count >= nBlobs) continue;
+      if (hh < 3 || crowns.count >= nBlobs || meadowK(X, Z) > 0.2) continue;
       const sc = 2 + r() * 1.6;
       if (A) addBlob(X, heightAt(X, Z) + sc * 0.5, Z, sc * 1.4, sc, sc * 1.4, r() * 6);
       else addBlob(X, heightAt(X, Z) + sc * 0.3, Z, sc, sc * 0.8, sc, r() * 6);
@@ -1423,6 +1446,7 @@ export class World {
     this.buildEastCoast();
     this.buildCanola();
     this.buildParasols();
+    this.buildHillPath();
     // 갯바위 사이 청록 웅덩이 (바닷물이 고인 곳)
     const poolM = new THREE.MeshStandardMaterial({ color: '#3cb7b1', roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.88 });
     const floorM = new THREE.MeshStandardMaterial({ color: '#2f5f57', roughness: 0.9 });
@@ -1861,6 +1885,7 @@ export class World {
       ['돌탑 해변', this.bigCairn ? this.bigCairn.X - 2.5 : 356, this.bigCairn ? this.bigCairn.Z - 2 : 4],
       ['소나무 그늘 벤치', this.benches ? this.benches[0].X : 296, this.benches ? this.benches[0].Z - 1.6 : 2],
       ['바다 위 철제 산책로', 500, -14.5],
+      ['풍차 언덕', WINDMILL.x - 3, WINDMILL.z - 5],
     ];
     let found = [];
     try { found = JSON.parse(localStorage.getItem('surflure.found.east') || '[]'); } catch (e) { found = []; }
@@ -2010,6 +2035,145 @@ export class World {
     }
   }
 
+  // 풀밭 해안 언덕: 여럿이 걷는 넓은 돌길, 양옆 나무 울타리, 벤치, 들꽃, 꼭대기의 흰 풍차
+  buildHillPath() {
+    const scene = this.scene, r = rng(515), W = 5.2;
+    // 지형 그물(삼각형)의 실제 높이: 길이 땅에 묻히지 않게 그물 꼭짓점 사이를 보간
+    const G = this.terrGrid;
+    const cell = (arr, v) => { let lo = 0, hi = arr.length - 2; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= v) lo = m; else hi = m - 1; } return lo; };
+    const meshY = (X, Z) => {
+      const i = cell(G.xs, X), j = cell(G.zs, Z);
+      const x0 = G.xs[i], x1 = G.xs[i + 1], z0 = G.zs[j], z1 = G.zs[j + 1];
+      const u = clamp((X - x0) / (x1 - x0)), v = clamp((Z - z0) / (z1 - z0));
+      const a = heightAt(x0, z0), b = heightAt(x1, z0), c = heightAt(x0, z1), d = heightAt(x1, z1);
+      return Math.max(lerp(lerp(a, b, u), lerp(c, d, u), v), u + v < 1 ? a + (b - a) * u + (c - a) * v : d + (c - d) * (1 - u) + (b - d) * (1 - v), u > v ? a + (b - a) * u + (d - b) * v : a + (d - c) * u + (c - a) * v);
+    };
+    // 길을 촘촘히 나눈 점들
+    const pts = [];
+    const curve = new THREE.CatmullRomCurve3(HILL_PATH.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+    const NP = 120;
+    for (let i = 0; i <= NP; i++) { const p = curve.getPoint(i / NP), tg = curve.getTangent(i / NP); pts.push({ x: p.x, z: p.z, nx: -tg.z, nz: tg.x }); }
+    // 돌 포장길 (지형을 따라 덮는 띠)
+    const pos = [], uv = [], idx = [], CS = 8;
+    pts.forEach((p, i) => {
+      for (let k = 0; k <= CS; k++) {
+        const o = (k / CS - 0.5) * W, x = p.x + p.nx * o, z = p.z + p.nz * o;
+        pos.push(x, meshY(x, z) + 0.06, z); uv.push(k / CS * 2, i * 0.26);
+      }
+      if (i > 0) for (let k = 0; k < CS; k++) { const a = (i - 1) * (CS + 1) + k, b = a + CS + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    // 둥근 돌을 박은 포장 무늬
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+    const cx = cv.getContext('2d'); cx.fillStyle = '#a58a62'; cx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 90; i++) { const x = r() * 256, y = r() * 256, a = 12 + r() * 16, b = 9 + r() * 10, l = 150 + r() * 50; cx.fillStyle = `rgb(${l + 22},${l + 8},${l - 22})`; for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) { cx.beginPath(); cx.ellipse(x + ox, y + oy, a, b, r() * 3, 0, 7); cx.fill(); } }
+    const tex = new THREE.CanvasTexture(cv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    const path = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2 }));
+    path.receiveShadow = true;
+    scene.add(path);
+    // 양옆 나무 울타리 (기둥 + 가로대 2줄)
+    const wood = new THREE.MeshStandardMaterial({ color: '#9a6f45', roughness: 0.85 });
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(1, 1, 1), pv = new THREE.Vector3(), col = new THREE.Color();
+    const posts = [[], []];
+    for (let i = 0; i <= NP; i += 5) for (const side of [0, 1]) { const p = pts[i], o = (side ? 1 : -1) * (W / 2 + 0.5), x = p.x + p.nx * o, z = p.z + p.nz * o; posts[side].push(new THREE.Vector3(x, heightAt(x, z), z)); }
+    const all = posts[0].concat(posts[1]);
+    const pim = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 1.25, 0.2), wood, all.length);
+    all.forEach((p, i) => { m4.compose(pv.set(p.x, p.y + 0.6, p.z), q.identity(), sv.set(1, 1, 1)); pim.setMatrixAt(i, m4); });
+    pim.castShadow = true; scene.add(pim);
+    const rim = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.12, 0.07), wood, all.length * 2);
+    let n = 0;
+    for (const line of posts) for (let i = 0; i < line.length - 1; i++) {
+      const a = line[i], b = line[i + 1];
+      q.setFromEuler(new THREE.Euler(0, -Math.atan2(b.z - a.z, b.x - a.x), Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z)), 'YZX'));
+      for (const hy of [0.55, 1.0]) { m4.compose(pv.set((a.x + b.x) / 2, (a.y + b.y) / 2 + hy, (a.z + b.z) / 2), q, sv.set(a.distanceTo(b), 1, 1)); rim.setMatrixAt(n++, m4); }
+    }
+    rim.count = n; rim.castShadow = true; scene.add(rim);
+    // 벤치 (길 안쪽 가장자리, 바다를 향해)
+    const bm = new THREE.MeshStandardMaterial({ color: '#b07a48', roughness: 0.8 });
+    [30, 65, 96].forEach((i) => {
+      const p = pts[i], o = W / 2 - 0.5, x = p.x + p.nx * o, z = p.z + p.nz * o;
+      const b = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.5), bm); seat.position.y = 0.45;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.45, 0.07), bm); back.position.set(0, 0.8, 0.24);
+      b.add(seat, back);
+      for (const sx of [-0.8, 0.8]) { const lg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.45), bm); lg.position.set(sx, 0.22, 0); b.add(lg); }
+      b.position.set(x, heightAt(x, z) + 0.05, z);
+      b.rotation.y = Math.atan2(p.nx, p.nz);
+      b.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+      scene.add(b);
+      this.colliders.push({ X: x, Z: z, r: 0.7 });
+    });
+    // 풍차: 돌 기단, 흰 몸통, 빨간 지붕, 격자 날개 4장
+    {
+      const wx = WINDMILL.x, wz = WINDMILL.z, wy = heightAt(wx, wz);
+      const wm = new THREE.Group();
+      const white = new THREE.MeshStandardMaterial({ color: '#f3efe6', roughness: 0.8 });
+      const red = new THREE.MeshStandardMaterial({ color: '#c8402f', roughness: 0.6 });
+      const stone = new THREE.MeshStandardMaterial({ color: '#b3a58c', roughness: 0.95, flatShading: true });
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 5.2, 2.4, 14), stone); base.position.y = -0.4;
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 2.9, 7.5, 16), white); body.position.y = 4.5;
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(2.4, 2.4, 16), red); cap.position.y = 9.4;
+      const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2, 0.2), new THREE.MeshStandardMaterial({ color: '#7a5233', roughness: 0.8 })); door.position.set(0, 1.8, -2.75);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.2), new THREE.MeshStandardMaterial({ color: '#5d7f96', roughness: 0.3 })); win.position.set(0, 5.6, -2.2);
+      wm.add(base, body, cap, door, win);
+      const hub = new THREE.Group();
+      const bladeM = new THREE.MeshStandardMaterial({ color: '#efe9da', roughness: 0.8, side: THREE.DoubleSide });
+      const spar = new THREE.MeshStandardMaterial({ color: '#8a6540', roughness: 0.8 });
+      for (let k = 0; k < 4; k++) {
+        const arm = new THREE.Group();
+        const sp = new THREE.Mesh(new THREE.BoxGeometry(0.14, 5.6, 0.14), spar); sp.position.y = 2.8;
+        const sail = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 4.2, 1, 6), bladeM); sail.position.set(0.62, 3.3, 0);
+        arm.add(sp, sail);
+        for (let j = 0; j < 6; j++) { const bar = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.06, 0.08), spar); bar.position.set(0.6, 1.4 + j * 0.76, 0.03); arm.add(bar); }
+        arm.rotation.z = k * Math.PI / 2;
+        hub.add(arm);
+      }
+      hub.add(new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), spar));
+      hub.position.set(0, 8.3, -2.5);
+      wm.add(hub);
+      wm.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+      wm.position.set(wx, wy, wz);
+      wm.rotation.y = 0.25;
+      scene.add(wm);
+      this.windmill = hub;
+      this.colliders.push({ X: wx, Z: wz, r: 5 });
+    }
+    // 풀과 들꽃
+    {
+      const blade = new THREE.ConeGeometry(0.07, 0.55, 3); blade.translate(0, 0.27, 0);
+      const N = this.mobile ? 2200 : 4200;
+      const grass = new THREE.InstancedMesh(blade, new THREE.MeshLambertMaterial({ color: '#ffffff' }), N);
+      const fl = new THREE.IcosahedronGeometry(0.1, 0); fl.scale(1, 0.6, 1); fl.translate(0, 0.42, 0);
+      const flowers = new THREE.InstancedMesh(fl, new THREE.MeshLambertMaterial({ color: '#ffffff' }), Math.floor(N / 2));
+      grass.count = flowers.count = 0;
+      const fc = ['#ffffff', '#ffd84a', '#f28ab0', '#b99cf0', '#ff9a3c', '#f7f3d0'];
+      let guard = 0;
+      while (grass.count < N && guard++ < N * 6) {
+        const X = 394 + r() * 56, Z = 12 + r() * 62;
+        const mk = meadowK(X, Z);
+        if (mk < 0.3 || hillPathDist(X, Z) < W / 2 + 0.3 || Math.hypot(X - WINDMILL.x, Z - WINDMILL.z) < 5.4 || (Math.abs(X - EAST_PAV.x) < 9 && Math.abs(Z - EAST_PAV.z) < 7)) continue;
+        const y = heightAt(X, Z);
+        q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.5, r() * 6, (r() - 0.5) * 0.5));
+        const h = 0.7 + r() * 0.9;
+        m4.compose(pv.set(X, y, Z), q, sv.set(1 + r(), h, 1 + r()));
+        grass.setMatrixAt(grass.count, m4);
+        grass.setColorAt(grass.count, col.setRGB(0.35 + r() * 0.15, 0.62 + r() * 0.2, 0.22 + r() * 0.1));
+        grass.count++;
+        if (flowers.count < flowers.instanceMatrix.count && r() < 0.5) {
+          m4.compose(pv.set(X + (r() - 0.5) * 0.4, y, Z + (r() - 0.5) * 0.4), q.identity(), sv.setScalar(0.8 + r() * 0.8));
+          flowers.setMatrixAt(flowers.count, m4);
+          flowers.setColorAt(flowers.count, col.set(fc[Math.floor(r() * fc.length)]));
+          flowers.count++;
+        }
+      }
+      grass.instanceMatrix.needsUpdate = flowers.instanceMatrix.needsUpdate = true;
+      scene.add(grass, flowers);
+    }
+  }
+
   // 유채꽃밭 (해수욕장 뒤 ~ 기찻길 양옆): 초록 줄기 + 노란 꽃송이, 사이로 소나무길이 지나간다
   buildCanola() {
     const r = rng(404);
@@ -2154,6 +2318,7 @@ export class World {
   updateEastScenery(t, dt = 0.016, ax = 0, az = 0) {
     this.updatePoolLife(t, dt);
     this.updateDiscover(t, ax, az);
+    if (this.windmill) this.windmill.rotation.z = -t * 0.7 * (0.6 + (this.windK || 1) * 0.25);
     const T = this.eastTrain;
     if (!T) return;
     // 40초마다 한 번 지나간다
