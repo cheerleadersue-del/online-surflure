@@ -50,7 +50,8 @@ function vnoise(x, z) {
 }
 const fbm = (x, z) => vnoise(x, z) * 0.5 + vnoise(x * 2.1 + 5, z * 2.1) * 0.25 + vnoise(x * 4.3, z * 4.3 + 3) * 0.125;
 
-export function shoreZ(X) {
+// 뭍의 해안선 (섬 같은 곶을 빼고 본 원래 물가)
+function shoreBase(X) {
   if (MODE.sihwa) return -DIKE.half - 1.2;
   if (MODE.river) return -8 + Math.sin(X * 0.021) * 2.2;
   // 소나무 숲길 없이 처음부터 해변
@@ -62,28 +63,45 @@ export function shoreZ(X) {
   z = lerp(z, -7 + Math.sin(X * 0.09) * 1.2, smooth(LAY.deck0 - 4, LAY.deck0 + 6, X));
   z = lerp(z, -9 + Math.sin(X * 0.11) * 1.5, smooth(LAY.rock0 - 6, LAY.rock0 + 10, X));
   z = lerp(z, -5.6, smooth(PIER_X - 7, PIER_X + 1, X));
-  // 동해: 정자가 올라앉는 바위 곶이 바다로 길게 튀어나온다 (환경 컨셉아트 기준)
-  if (MODE.east) z -= HEAD.len * headBump(X);
   return z;
 }
-// 바위 곶: 가로 중심, 뻗은 길이, 양옆 경사 구간
-const HEAD = { x: 424, len: 54, half: 29, w0: 395, w1: 413, e0: 435, e1: 453 };
-// 곶의 윤곽: 끝이 둥글고 뿌리가 넓은 반타원 + 들쭉날쭉한 굴곡
-const headBump = (X) => {
-  const u = (X - HEAD.x) / HEAD.half;
-  if (Math.abs(u) >= 1) return 0;
-  const b = Math.pow(1 - u * u, 0.72);
-  return b * (1 + (vnoise(X * 0.21, 9.3) - 0.5) * 0.22 * smooth(0, 0.35, b));
-};
-// 물가까지의 실제 거리(곶 옆면처럼 해안선이 비스듬한 곳에서는 Z 차이보다 짧다)
-function shoreDist(X, Z) {
-  const dz = Z - shoreZ(X);
-  if (!MODE.east || X < HEAD.w0 - 3 || X > HEAD.e1 + 3) return dz;
-  const sl = (shoreZ(X + 0.8) - shoreZ(X - 0.8)) / 1.6;
-  return dz / Math.sqrt(1 + sl * sl);
+// 바깥 물가: 동해는 정자 바위섬을 감싸는 바깥 테두리까지 (그 안쪽에 얕은 석호와 낮은 목이 있다)
+export function shoreZ(X) {
+  const z = shoreBase(X);
+  return MODE.east ? z - HEAD.len * headBump(X) : z;
+}
+// 정자 구역 (환경 컨셉아트 기준): 해변 → 낮은 목(둑길) → 섬처럼 솟은 바위 → 정자
+const HEAD = { x: 394, len: 56, half: 27 };
+const ISLE = { x: 394, z: -41, r: 18, top: 9.5, neckX: 393, neckW: 5, stairX: 394 };
+const headBump = (X) => { const u = (X - HEAD.x) / HEAD.half; return Math.abs(u) >= 1 ? 0 : Math.sqrt(1 - u * u); };
+const neckProf = (X) => smooth(ISLE.neckW + 3, ISLE.neckW, Math.abs(X - ISLE.neckX));
+// 테두리 안쪽(뭍의 물가와 바깥 물가 사이)의 높이: 바위섬, 낮은 목, 섬으로 오르는 계단 자리, 얕은 석호
+function headInfo(X, Z) {
+  if (!MODE.east) return null;
+  const b = headBump(X);
+  if (b <= 0) return null;
+  const zb = shoreBase(X);
+  if (Z >= zb) return null;
+  const d = Math.hypot(X - ISLE.x, Z - ISLE.z);
+  const Rn = ISLE.r + (vnoise(X * 0.25 + 3, Z * 0.25) - 0.5) * 3;
+  const t = smooth(Rn, Rn - 6, d);
+  const ledge = clamp(t + Math.sin(t * 18 + fbm(X * 0.3, Z * 0.3) * 6) * 0.035 * t * (1 - t) * 4);
+  const hi = ISLE.top * ledge;
+  const inNeck = Z > ISLE.z + 6;
+  const np = inNeck ? neckProf(X) : 0;
+  let h = Math.max(hi, 1.5 * np);
+  const ax = Math.abs(X - ISLE.stairX);
+  if (ax < 3.7 && Z < -20 && Z > -37) h = lerp(h, lerp(1.5, ISLE.top, clamp((-22.5 - Z) / 10.5)), smooth(3.7, 2.2, ax));
+  if (h < 0.04) {
+    const dl = Math.min(d - Rn, inNeck ? Math.abs(X - ISLE.neckX) - (ISLE.neckW + 3) : 99);
+    // 바다 바닥은 뭍의 물가에서 멀어질수록 깊어지고(테두리와 무관하게 이어진다), 섬·목 가까이는 얕다
+    const d0 = Z - zb, floor = d0 > -25 ? d0 * 0.07 : Math.max(-16, -1.75 + (d0 + 25) * 0.15);
+    h = Math.min(-0.04, floor * smooth(0, 4, dl));
+  }
+  return { h, neck: hi < 0.5 ? np : 0 };
 }
 function hillH(X, Z) {
-  const mask = smooth(6, 26, Z - shoreZ(X) - (MODE.east ? HEAD.len * headBump(X) : 0)); // 언덕이 물가까지 번지지 않게 (곶은 빼고 잰다)
+  const mask = smooth(6, 26, Z - shoreBase(X)); // 언덕이 물가까지 번지지 않게
   if (mask <= 0) return 0;
   return mask * hillRaw(X, Z);
 }
@@ -96,24 +114,24 @@ function hillRaw(X, Z) {
 const cliffTop = () => (MODE.east ? 15 : 8.5);
 function cliffH(X, Z) {
   const k = MODE.east
-    ? smooth(LAY.deck0 - 12, LAY.deck0 + 10, X) * (1 - smooth(LAY.deck1 - 14, LAY.deck1 + 8, X))
+    ? smooth(388, 418, X) * (1 - smooth(LAY.deck1 - 14, LAY.deck1 + 8, X)) // 서쪽은 지그재그 길이 오르는 완만한 비탈
     : smooth(LAY.deck0 - 2, LAY.deck0 + 10, X) * (1 - smooth(LAY.deck1 - 10, LAY.deck1 + 4, X));
   if (k <= 0) return 0;
-  const dz = Z - shoreZ(X);
+  const dz = Z - shoreBase(X);
   if (MODE.east) {
     // 바위 절벽: 면이 들쭉날쭉(돌출부·틈)하고 층이 진 화강암
-    const d = shoreDist(X, Z);
     const j = Math.max(-0.3, (fbm(X * 0.11, 3.7) - 0.5) * 3 + (vnoise(X * 0.45, Z * 0.45) - 0.5) * 1.6);
-    const t = smooth(4.4 + j, 10 + j * 0.6, d); // 물가의 바위 모델 뒤에서 솟는 비탈
+    const t = smooth(4.4 + j, 10 + j * 0.6, dz); // 물가의 바위 모델 뒤에서 솟는 비탈
     const ledge = t + Math.sin(t * 18 + fbm(X * 0.3, Z * 0.3) * 6) * 0.035 * t * (1 - t) * 4;
-    // 곶은 뭍(15m)보다 낮은 바위 마루(약 11m)로, 끝으로 갈수록 조금 더 낮아진다
-    const top = lerp(cliffTop(), 11, smooth(4, -12, Z)) - smooth(-30, -58, Z) * 1.2;
-    const flat = lerp(0.88 + fbm(X * 0.2, Z * 0.2) * 0.25, 1, smooth(2, -8, Z)); // 곶 위는 걷기 좋게 평평하게
-    return k * top * clamp(ledge) * flat;
+    return k * cliffTop() * clamp(ledge) * (0.88 + fbm(X * 0.2, Z * 0.2) * 0.25);
   }
   return k * cliffTop() * smooth(5.2, 9, dz) * (0.85 + fbm(X * 0.2, Z * 0.2) * 0.3);
 }
 function heightAt(X, Z) {
+  const h = heightNat(X, Z);
+  return MODE.east ? zigCarve(X, Z, h) : h;
+}
+function heightNat(X, Z) {
   if (MODE.river) {
     const sz = shoreZ(X), fz = farShore(X), n = fbm(X * 0.05, Z * 0.05);
     const mtn = (d) => Math.max(0, d - 26) * 0.32 * (0.6 + n * 0.8) + Math.max(0, d - 70) * 0.25;
@@ -130,7 +148,14 @@ function heightAt(X, Z) {
     const floor = -5 + fbm(X * 0.02, Z * 0.02) * 1.5;
     return lerp(floor, Math.max(bank, floor), inX);
   }
-  const sz = shoreZ(X);
+  let sz = shoreZ(X), neckAdd = 0;
+  if (MODE.east) {
+    const zb = shoreBase(X);
+    if (zb !== sz) {
+      if (Z >= zb) { sz = zb; neckAdd = 1.5 * neckProf(X) * (1 - smooth(0, 14, Z - zb)); } // 뭍: 원래 물가 기준, 목이 닿는 자리는 살짝 돋움
+      else return headInfo(X, Z).h; // 섬·목·그 둘레 바다
+    }
+  }
   const dz = Z - sz;
   const forest = 0;
   let h;
@@ -143,7 +168,7 @@ function heightAt(X, Z) {
   }
   const rocky = rockyK(X);
   if (rocky > 0 && dz > -8 && dz < 10) h += rocky * fbm(X * 0.22, Z * 0.22) * 1.4 * (1 - Math.abs(dz - 1) / 11);
-  h += hillH(X, Z) + cliffH(X, Z);
+  h += hillH(X, Z) + cliffH(X, Z) + neckAdd;
   return h;
 }
 function rockyK(X) {
@@ -163,17 +188,62 @@ export function groundY(X) {
 }
 
 // 동해 절벽 정자 자리와 해변에서 올라가는 데크계단
-const EAST_PAV = { x: 424, z: -40 };
+const EAST_PAV = { x: 394, z: -44 };
 const EAST_STAIR = { x0: 360, x1: 403, z: 6, w: 2.2 };
 // 풀밭 해안 언덕길 (키 아트 14b): 계단 꼭대기 → 정자 뒤 → 언덕 위 풍차
-const HILL_PATH = [[406, 7], [410, 15], [409, 25], [414, 35], [422, 44], [427, 52]];
+const HILL_PATH = [[417.5, 21], [417.5, 30], [418, 38], [422, 45], [427, 52]];
+// 지그재그 돌길: 해변에서 언덕 위까지 굽이굽이 오른다 (키 아트 '언덕 오르는 길 ①')
+// 이 비탈은 남서쪽을 보고 있어서(등고선이 비스듬함) 등고선 방향(u)으로 길게 가고 오르막 방향(v)으로 조금씩 오르는 굽이로 잡는다
+const ZIG = [[0, 0], [-9, 5.5], [9, 11.5], [-11, 17.5], [13, 23.5], [-8, 29], [5.8, 33.2]].map(([u, v]) => [389 + u * 0.67 + v * 0.74, 3 - u * 0.74 + v * 0.67]);
+const ZIG_W = 3.4;
+let zigCache = null;
+function zigSamples() {
+  if (zigCache) return zigCache;
+  const P = [];
+  for (let i = 0; i < ZIG.length - 1; i++) {
+    const [ax, az] = ZIG[i], [bx, bz] = ZIG[i + 1];
+    const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5);
+    for (let k = 0; k < n; k++) P.push({ x: ax + (bx - ax) * k / n, z: az + (bz - az) * k / n });
+  }
+  P.push({ x: ZIG[ZIG.length - 1][0], z: ZIG[ZIG.length - 1][1] });
+  const N = P.length;
+  P.forEach((p) => { p.g = heightNat(p.x, p.z); });
+  P.forEach((p, i) => {
+    const a = P[Math.max(0, i - 3)], b = P[Math.min(N - 1, i + 3)];
+    const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    p.nx = -(b.z - a.z) / l; p.nz = (b.x - a.x) / l;
+    let sum = 0, c = 0;
+    for (let k = Math.max(0, i - 4); k <= Math.min(N - 1, i + 4); k++) { sum += P[k].g; c++; }
+    p.y = sum / c;
+  });
+  for (let i = 1; i < N; i++) P[i].y = Math.max(P[i].y, P[i - 1].y); // 내려가는 구간 없이 꾸준히 오른다
+  // 길이 방향으로 한 번 더 고르게
+  for (let pass = 0; pass < 3; pass++) for (let i = 1; i < N - 1; i++) P[i].y = (P[i - 1].y + P[i].y * 2 + P[i + 1].y) / 4;
+  return (zigCache = P);
+}
+// 길 자리의 땅을 길 높이로 깎거나 돋운다 (산허리를 따라 낸 단)
+function zigCarve(X, Z, h) {
+  if (X < 379 || X > 425 || Z < -1 || Z > 37) return h;
+  const P = zigSamples();
+  let best = 1e9, y = 0;
+  for (let i = 0; i < P.length; i++) { const dx = X - P[i].x, dz = Z - P[i].z, d = dx * dx + dz * dz; if (d < best) { best = d; y = P[i].y; } }
+  const w = smooth(ZIG_W / 2 + 2.2, ZIG_W / 2 + 0.5, Math.sqrt(best));
+  return w > 0 ? lerp(h, y, w) : h;
+}
+function zigY(X, Z) {
+  if (!MODE.east || X < 379 || X > 425 || Z < -1 || Z > 37) return null;
+  const P = zigSamples();
+  let best = (ZIG_W / 2) ** 2, y = null;
+  for (let i = 0; i < P.length; i++) { const dx = X - P[i].x, dz = Z - P[i].z, d = dx * dx + dz * dz; if (d < best) { best = d; y = P[i].y; } }
+  return y;
+}
 const WINDMILL = { x: 429, z: 58 };
 // 곶 위 데크길: 계단 꼭대기 → 곶 마루 → 정자 앞
-const HEAD_PATH = [[407, 4], [412, -6], [419, -16], [424, -25], [424, -32.5]];
+const HEAD_PATH = [[390.5, 2.5], [392.5, -6], [393, -14], [394, -21.8]];
 function hillPathDist(X, Z) {
   let best = 1e9;
-  for (let i = 0; i < HILL_PATH.length - 1; i++) {
-    const [ax, az] = HILL_PATH[i], [bx, bz] = HILL_PATH[i + 1];
+  for (const L of [HILL_PATH, ZIG]) for (let i = 0; i < L.length - 1; i++) {
+    const [ax, az] = L[i], [bx, bz] = L[i + 1];
     const dx = bx - ax, dz = bz - az;
     const t = Math.max(0, Math.min(1, ((X - ax) * dx + (Z - az) * dz) / (dx * dx + dz * dz)));
     best = Math.min(best, Math.hypot(X - ax - dx * t, Z - az - dz * t));
@@ -182,7 +252,7 @@ function hillPathDist(X, Z) {
 }
 // 풀밭(초원) 정도: 언덕길 둘레와 풍차 둘레는 나무 없이 풀과 들꽃
 function meadowK(X, Z) {
-  if (!MODE.east || X < 392 || X > 452 || Z < 3 || Z > 82) return 0;
+  if (!MODE.east || X < 382 || X > 452 || Z < 3 || Z > 82) return 0;
   const d = Math.min(hillPathDist(X, Z), Math.hypot(X - WINDMILL.x, Z - WINDMILL.z) - 4);
   return 1 - smooth(11, 19, d);
 }
@@ -254,6 +324,7 @@ export class World {
   build(line) {
     if (this.scene) this.dispose();
     this.line = line;
+    zigCache = null;
     MODE.river = !!(this.point && (this.point.type === 'bridge' || this.point.type === 'river'));
     const S = (this.style = LINE_STYLE[MODE.river ? 'river' : line] || LINE_STYLE.east);
     const scene = (this.scene = new THREE.Scene());
@@ -362,7 +433,10 @@ export class World {
         const h = heightAt(X, Z);
         pos[i * 3] = X; pos[i * 3 + 1] = h; pos[i * 3 + 2] = Z;
         uv[i * 2] = X / 5; uv[i * 2 + 1] = Z / 5;
-        const sz = shoreZ(X), dz = Z - sz;
+        const zb0 = MODE.east ? shoreBase(X) : 0;
+        const hi = MODE.east ? headInfo(X, Z) : null; // 섬·목·석호
+        const sz = MODE.east && Z >= zb0 ? zb0 : shoreZ(X);
+        const dz = hi && hi.h < 0 ? Z - zb0 : Z - sz; // 섬 둘레 바다 바닥은 물속 색으로
         const n = fbm(X * 0.15, Z * 0.15);
         // 모래/자갈 기본색
         if (dz < 0) c.copy(S.under).lerp(S.deepFloor, smooth(0, 9, -dz));
@@ -422,6 +496,10 @@ export class World {
             peb = bank; wet = (dn < 0 && df < 0) ? 1 : 0; rk = Math.max(rk, smooth(30, 60, Math.max(dn, df)) * 0.5);
             fo = Math.max(smooth(12, 20, dn), smooth(11, 18, df));
           }
+          if (hi && hi.h > 0.2) { // 목은 몽돌, 섬 옆면은 바위, 섬 위는 풀
+            const up = smooth(8.3, 9.3, hi.h);
+            wet = 0; peb = Math.max(peb, hi.neck); rk = Math.max(rk, smooth(1.6, 3.5, hi.h) * (1 - up * 0.75)); fo = up;
+          }
           splat[i * 4] = wet; splat[i * 4 + 1] = peb; splat[i * 4 + 2] = fo; splat[i * 4 + 3] = rk;
           // 색 보정(틴트)
           c.setRGB(1, 1, 1).multiplyScalar(0.9 + n * 0.2);
@@ -429,9 +507,8 @@ export class World {
           if (f > 0.3 && hh2 < 2) c.lerp(new THREE.Color(0.66, 0.5, 0.36), f * (1 - pathK * 0.7));
           if (hh2 > 2 || (dz > 24 && f < 1)) c.lerp(new THREE.Color(0.62, 0.8, 0.5), Math.max(smooth(2, 6, hh2), smooth(24, 34, dz) * (1 - f)) * 0.8);
           if (dz < 0) c.multiplyScalar(lerp(0.85, 0.45, smooth(0, 12, -dz)));
-          const mk = meadowK(X, Z) * smooth(13, 16.5, dz); // 절벽 면은 풀색으로 칠하지 않는다
-          // 곶 위: 모래색 대신 짧은 풀과 바위빛
-          if (MODE.east && Z < 8 && headBump(X) > 0) { const hk = smooth(7, 10.5, cliffH(X, Z)) * (1 - smooth(4, 8, Z)); if (hk > 0) c.lerp(new THREE.Color(0.6, 0.86, 0.42).lerp(new THREE.Color(0.85, 0.8, 0.7), smooth(0.45, 0.7, n)), hk * 0.8); }
+          const mk = meadowK(X, Z) * smooth(13, 16.5, dz) * smooth(2.5, 5, h); // 절벽 면과 해변은 풀색으로 칠하지 않는다
+          if (hi && hi.h > 6) c.lerp(new THREE.Color(0.6, 0.86, 0.42), smooth(8.3, 9.3, hi.h) * 0.8);
           if (mk > 0) c.lerp(new THREE.Color(0.62, 1.0, 0.36).multiplyScalar(0.9 + n * 0.2), mk * 0.85);
         }
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
@@ -796,7 +873,7 @@ export class World {
         // 절벽 위 소나무 숲 (정자 터와 데크계단은 비워 둔다)
         const CT = cliffTop();
         place(LAY.deck0 - 12, LAY.deck1 - 2, 2, 46, 3.6, (X, Z) => (cliffH(X, Z) > CT * 0.55 ? 0.92 : 0), 8, 14,
-          (X, Z) => (Math.abs(X - EAST_PAV.x) < 11 && Math.abs(Z - EAST_PAV.z) < 8) || (Z < EAST_STAIR.z + 3 && Z > EAST_STAIR.z - 3 && X < EAST_STAIR.x1 + 5) || Z - shoreZ(X) < 15 || meadowK(X, Z) > 0.35);
+          (X, Z) => (Math.abs(X - EAST_PAV.x) < 11 && Math.abs(Z - EAST_PAV.z) < 8) || (Z < EAST_STAIR.z + 3 && Z > EAST_STAIR.z - 3 && X < EAST_STAIR.x1 + 5) || Z - shoreBase(X) < 15 || meadowK(X, Z) > 0.35);
       } else {
         // 절벽 위 소나무 (데크길 뒤)
         place(LAY.deck0 + 6, LAY.deck1 - 6, 3, 40, 6, (X, Z) => (cliffH(X, Z) > 6 ? 0.7 : 0), 7, 12);
@@ -1099,7 +1176,7 @@ export class World {
     for (let i = 0; i < 1800; i++) {
       const X = LAY.peb0 + r() * (LAY.deck0 - LAY.peb0 - 4);
       const dz = -2 + r() * 18;
-      const Z = shoreZ(X) + dz;
+      const Z = shoreBase(X) + dz;
       const sc = MODE.east ? 0.13 + r() * r() * 0.42 : 0.08 + r() * r() * 0.28;
       q.setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3));
       sv.set(sc * (1.2 + r() * 0.5), sc * 0.55, sc);
@@ -1117,7 +1194,7 @@ export class World {
     // 떠밀려온 나무
     const logM = new THREE.MeshStandardMaterial({ color: '#a89580', roughness: 1, map: this.assets ? this.assets.tex.bark.map : null });
     for (let i = 0; i < 5; i++) {
-      const X = LAY.peb0 + 8 + r() * 55, Z = shoreZ(X) + 4 + r() * 6;
+      const X = LAY.peb0 + 8 + r() * 55, Z = shoreBase(X) + 4 + r() * 6;
       const log = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 2.5 + r() * 2, 8), logM);
       log.rotation.set(Math.PI / 2, 0, r() * 3);
       log.position.set(X, heightAt(X, Z) + 0.15, Z);
@@ -1482,11 +1559,10 @@ export class World {
     const r = rng(57);
     // 소나무 숲 절벽 위 정자 (바다 쪽 흰 난간 테라스) + 해변에서 올라가는 데크계단
     this.oldPavilion = L.temple(EAST_PAV.x, EAST_PAV.z, 0.85);
-    this.colliders.push({ X: EAST_PAV.x, Z: EAST_PAV.z, r: 6.4 });
-    this.buildCliffStair();
+    this.colliders.push({ X: EAST_PAV.x, Z: EAST_PAV.z, r: 5.6 });
+    this.buildIsleStair();
     this.placeEastModels();
     this.buildPinePath();
-    this.buildCliffRocks();
     this.buildEastCoast();
     this.buildCanola();
     this.buildParasols();
@@ -1812,7 +1888,7 @@ export class World {
       };
       this.cairns = [];
       for (let i = 0; i < 14; i++) {
-        const X = LAY.peb0 + 10 + r() * 52, Z = shoreZ(X) + 7 + r() * 8;
+        const X = LAY.peb0 + 10 + r() * 52, Z = shoreBase(X) + 7 + r() * 8;
         let y = heightAt(X, Z);
         const n = 3 + Math.floor(r() * 5);
         for (let k = 0; k < n; k++) {
@@ -2173,6 +2249,7 @@ export class World {
     const path = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2 }));
     path.receiveShadow = true;
     scene.add(path);
+    this.buildZigzag(tex);
     // 양옆 나무 울타리 (기둥 + 가로대 2줄)
     const wood = new THREE.MeshStandardMaterial({ color: '#9a6f45', roughness: 0.85 });
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(1, 1, 1), pv = new THREE.Vector3(), col = new THREE.Color();
@@ -2251,7 +2328,7 @@ export class World {
       const fc = ['#ffffff', '#ffd84a', '#f28ab0', '#b99cf0', '#ff9a3c', '#f7f3d0'];
       let guard = 0;
       while (grass.count < N && guard++ < N * 6) {
-        const X = 394 + r() * 56, Z = 12 + r() * 62;
+        const X = 384 + r() * 66, Z = 4 + r() * 70;
         const mk = meadowK(X, Z);
         if (mk < 0.3 || hillPathDist(X, Z) < W / 2 + 0.3 || Math.hypot(X - WINDMILL.x, Z - WINDMILL.z) < 5.4 || (Math.abs(X - EAST_PAV.x) < 9 && Math.abs(Z - EAST_PAV.z) < 7)) continue;
         const y = heightAt(X, Z);
@@ -2357,14 +2434,14 @@ export class World {
       };
       // 정자: 계단이 언덕길(서쪽)을 향하게
       {
-        const sc = 13, y = heightAt(EAST_PAV.x, EAST_PAV.z);
+        const sc = 11, y = heightAt(EAST_PAV.x, EAST_PAV.z) + 0.15;
         put(M.pavilion, EAST_PAV.x, y + 0.427 * sc - 0.9, EAST_PAV.z, sc, sc, sc, -Math.PI / 2); // 계단이 뭍 쪽(데크길)을 향한다
         if (this.oldPavilion) this.oldPavilion.visible = false;
       }
       // 화강암 절벽 덩어리: 절벽 면 앞에 세로로 키워 세운다 (데크길은 가리지 않게)
       this.dressHeadland(M, put, r);
       // 굽은 소나무: 정자 둘레와 절벽 끝
-      const pines = this.mobile ? [[413.5, -34], [434.5, -35], [430, -13], [403, 14]] : [[413.5, -34], [434.5, -35], [430, -13], [403, 14], [413, -21], [434, -24], [440, 8]];
+      const pines = this.mobile ? [[384.5, -40], [403.5, -41], [388, -50.5], [421, 8]] : [[384.5, -40], [403.5, -41], [388, -50.5], [400.5, -50], [421, 8], [383, 27], [422, 31]];
       pines.forEach(([X, Z]) => {
         const sc = 8.5 + r() * 2.5;
         put(M.pine, X, heightAt(X, Z) + 0.42 * sc - 0.9, Z, sc, sc, sc, r() * 6.28);
@@ -2388,45 +2465,117 @@ export class World {
   dressHeadland(M, put, r) {
     if (this.cliffRocksIM) this.cliffRocksIM.visible = false;
     for (const k of ['cliff_lo', 'rock_wall', 'rock_boulders', 'rock_arch', 'rock_stack']) M[k].traverse((m) => { if (m.isMesh) m.material.color.setScalar(1.22); });
-    // 물가 선을 따라 일정한 간격으로 자리를 잡는다 (뭍의 절벽 → 곶 서쪽 → 끝 → 동쪽 → 뭍)
-    const line = [];
-    for (let X = 383; X <= 464; X += 0.5) line.push([X, shoreZ(X)]);
-    const gap = this.mobile ? 12.5 : 8.6;
-    let acc = gap * 0.5, i = 0;
-    for (let k = 1; k < line.length; k++) {
-      const [ax, az] = line[k - 1], [bx, bz] = line[k];
-      const seg = Math.hypot(bx - ax, bz - az);
-      acc += seg;
-      if (acc < gap) continue;
-      acc = 0;
-      let tx = (bx - ax) / seg, tz = (bz - az) / seg;
-      // 뭍 쪽(안쪽) 방향
-      let nx = -tz, nz = tx;
-      if (nz < -0.05 || (Math.abs(nz) <= 0.05 && nx * (HEAD.x - bx) < 0)) { nx = -nx; nz = -nz; }
-      const cx = bx + nx * 2.4, cz = bz + nz * 2.4;
-      const full = heightAt(bx + nx * 13, bz + nz * 13); // 그 자리 절벽 꼭대기 높이
-      if (full < 4) continue; // 절벽이 낮아지는 끝자락
-      if (Math.abs(cz - EAST_STAIR.z) < 4 && cx < EAST_STAIR.x1 + 3) continue; // 계단 자리
+    let i = 0;
+    // 물가의 한 점(b)에 바위 절벽 한 덩어리를 세운다. n: 뭍 쪽 방향, t: 물가 방향, full: 그 자리 꼭대기 높이
+    const piece = (bx, bz, nx, nz, tx, tz, full, inset) => {
+      const cx = bx + nx * inset, cz = bz + nz * inset;
       const H = Math.min(13.5, full - 0.4) + 1.2 + r() * 1.2;
       const kind = i % 5 === 3 ? 'rock_arch' : i % 2 ? 'cliff_lo' : 'rock_wall';
-      const jx = (r() - 0.5) * 1.2, jz = (r() - 0.5) * 1.2;
-      if (kind === 'rock_wall') put(M.rock_wall, cx + jx, -0.6 + H / 2, cz + jz, 24, H / 0.375, 15 + r() * 3, Math.atan2(tx, tz) + (r() < 0.5 ? Math.PI : 0));
-      else if (kind === 'cliff_lo') put(M.cliff_lo, cx + jx, -0.6 + H / 2, cz + jz, 15 + r() * 3, H / 0.37, 10, Math.atan2(-tz, tx) + (r() < 0.5 ? Math.PI : 0));
-      else put(M.rock_arch, cx + jx, -0.6 + H * 0.92 / 2, cz + jz, 11, H * 0.92 / 0.554, 15 + r() * 2, Math.atan2(tx, tz) + (r() < 0.5 ? Math.PI : 0));
-      // 물가의 둥근 바위 더미 (파도가 부서지는 자리)
-      if (!this.mobile ? i % 2 === 0 : i % 3 === 0) {
+      const jx = (r() - 0.5) * 1.2, jz = (r() - 0.5) * 1.2, flip = r() < 0.5 ? Math.PI : 0;
+      if (kind === 'rock_wall') put(M.rock_wall, cx + jx, -0.6 + H / 2, cz + jz, 24, H / 0.375, 15 + r() * 3, Math.atan2(tx, tz) + flip);
+      else if (kind === 'cliff_lo') put(M.cliff_lo, cx + jx, -0.6 + H / 2, cz + jz, 15 + r() * 3, H / 0.37, 10, Math.atan2(-tz, tx) + flip);
+      else put(M.rock_arch, cx + jx, -0.6 + H * 0.92 / 2, cz + jz, 11, H * 0.92 / 0.554, 15 + r() * 2, Math.atan2(tx, tz) + flip);
+      if (!this.mobile ? i % 2 === 0 : i % 3 === 0) { // 물가의 둥근 바위 더미 (파도가 부서지는 자리)
         const s = 7 + r() * 4, wx = bx - nx * 1.4, wz = bz - nz * 1.4;
         put(M.rock_boulders, wx, -0.5 + 0.166 * s * 0.9, wz, s, s * 0.9, s, r() * 6.28);
         this.stampDepth(wx, wz, s * 0.5, 0.05);
       }
       i++;
+    };
+    // 1) 섬 둘레 (목과 계단이 닿는 북쪽은 비운다)
+    const NI = this.mobile ? 7 : 11, a0 = Math.PI / 2 + 0.52, span = Math.PI * 2 - 1.04;
+    for (let k = 0; k < NI; k++) {
+      const a = a0 + span * (k + 0.5) / NI, ca = Math.cos(a), sa = Math.sin(a);
+      piece(ISLE.x + ca * ISLE.r, ISLE.z + sa * ISLE.r, -ca, -sa, -sa, ca, ISLE.top, 2.6);
     }
-    // 앞바다 바위 기둥
-    [[403, -57, 13], [449, -62, 9.5], [459, -33, 11], [389, -31, 7.5]].forEach(([X, Z, h]) => {
+    // 2) 뭍의 절벽 앞 (지그재그 길 동쪽 ~ 갯바위)
+    for (let X = 421; X <= 464; X += this.mobile ? 12.5 : 8.6) {
+      const bz = shoreBase(X), full = heightAt(X, bz + 13);
+      if (full >= 4) piece(X, bz, 0, 1, 1, 0, full, 2.4);
+    }
+    // 3) 목 양옆의 낮은 바위 (둑길을 받치는 돌)
+    for (const Z of this.mobile ? [-8, -17] : [-5, -10, -15, -20]) for (const sd of [-1, 1]) {
+      const s = 4 + r() * 2.2, X = ISLE.neckX + sd * (ISLE.neckW + 2.2 + r());
+      put(M.rock_boulders, X, -0.4 + 0.166 * s * 0.9, Z + (r() - 0.5) * 2, s, s * 0.9, s, r() * 6.28);
+      this.stampDepth(X, Z, s * 0.45, 0.05);
+    }
+    // 4) 앞바다 바위 기둥
+    [[371, -50, 10], [419, -54, 9], [404, -67, 7.5], [430, -27, 10]].forEach(([X, Z, h]) => {
       put(M.rock_stack, X, -1.2 + h / 2, Z, h * 0.85, h, h * 0.85, r() * 6.28);
       this.stampDepth(X, Z, h * 0.35, 0.05);
     });
     if (this.depthTex) this.depthTex.needsUpdate = true; // 새 바위 둘레에도 파도 거품이 일게
+  }
+
+  // 섬으로 오르는 돌계단 (목 끝 → 정자 앞마당): 지형이 계단 자리만큼 비탈로 깎여 있어 그대로 걸어 오른다
+  buildIsleStair() {
+    const scene = this.scene, X0 = ISLE.stairX;
+    const stone = new THREE.MeshStandardMaterial({ color: '#d2c9b6', roughness: 0.9, map: this.assets ? this.assets.tex.rock.map : null });
+    const wood = new THREE.MeshStandardMaterial({ color: '#8a6038', roughness: 0.85 });
+    const zs = [];
+    for (let Z = -22.2; Z > -33.4; Z -= 0.45) zs.push(Z);
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(3.5, 0.5, 0.56), stone, zs.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(1, 1, 1), pv = new THREE.Vector3();
+    zs.forEach((Z, i) => { m4.compose(pv.set(X0, heightAt(X0, Z - 0.22) - 0.17, Z - 0.22), q, sv); im.setMatrixAt(i, m4); });
+    im.castShadow = im.receiveShadow = true;
+    scene.add(im);
+    for (const sd of [-1, 1]) {
+      const pts = [];
+      for (let Z = -21.6; Z >= -34; Z -= 2.06) pts.push(new THREE.Vector3(X0 + sd * 1.95, heightAt(X0, Z), Z));
+      pts.forEach((p) => { const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.3, 0.2), wood); post.position.set(p.x, p.y + 0.6, p.z); post.castShadow = true; scene.add(post); });
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a = pts[k], b = pts[k + 1];
+        for (const hy of [0.6, 1.15]) {
+          const bar = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, a.distanceTo(b)), wood);
+          bar.position.set(a.x, (a.y + b.y) / 2 + hy, (a.z + b.z) / 2);
+          bar.rotation.x = Math.atan2(b.y - a.y, -(b.z - a.z));
+          scene.add(bar);
+        }
+      }
+    }
+  }
+
+  // 지그재그 돌길: 수평으로 다진 돌 포장 단 + 아래쪽 돌 축대 + 말뚝과 밧줄
+  buildZigzag(tex) {
+    const scene = this.scene, P = zigSamples(), W = ZIG_W;
+    const pos = [], uv = [], idx = [], wpos = [], widx = [];
+    P.forEach((p, i) => {
+      for (const sd of [-1, 1]) { pos.push(p.x + p.nx * sd * W / 2, p.y + 0.1, p.z + p.nz * sd * W / 2); uv.push(sd > 0 ? 1.3 : 0, i * 0.13); }
+      if (i > 0) { const a = (i - 1) * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+      // 축대: 양옆으로 땅까지 내려가는 돌벽
+      for (const sd of [-1, 1]) { const x = p.x + p.nx * sd * W / 2, z = p.z + p.nz * sd * W / 2; wpos.push(x, p.y + 0.1, z, x + p.nx * sd * 0.2, p.y - 0.9, z + p.nz * sd * 0.2); }
+      if (i > 0) for (const o of [0, 2]) { const a = (i - 1) * 4 + o, b = a + 4; widx.push(a, a + 1, b, a + 1, b + 1, b); }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    const road = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, side: THREE.DoubleSide }));
+    road.receiveShadow = true;
+    scene.add(road);
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3));
+    wg.setIndex(widx); wg.computeVertexNormals();
+    const wall = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: '#a79c88', roughness: 1, side: THREE.DoubleSide, flatShading: true }));
+    wall.castShadow = wall.receiveShadow = true;
+    scene.add(wall);
+    // 말뚝과 밧줄 (양옆)
+    const postM = new THREE.MeshStandardMaterial({ color: '#7a5a3c', roughness: 0.9 }), ropeM = new THREE.MeshStandardMaterial({ color: '#d9cdb0', roughness: 0.9 });
+    const lines = [[], []];
+    for (let i = 2; i < P.length; i += 6) for (const sd of [0, 1]) { const p = P[i], o = (sd ? 1 : -1) * (W / 2 - 0.12); lines[sd].push(new THREE.Vector3(p.x + p.nx * o, p.y, p.z + p.nz * o)); }
+    const all = lines[0].concat(lines[1]);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(1, 1, 1), pv = new THREE.Vector3();
+    const pim = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.08, 0.1, 0.95, 6), postM, all.length);
+    all.forEach((p, i) => { m4.compose(pv.set(p.x, p.y + 0.47, p.z), q.identity(), sv.set(1, 1, 1)); pim.setMatrixAt(i, m4); });
+    pim.castShadow = true; scene.add(pim);
+    const rim = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.045, 0.045), ropeM, all.length);
+    let n = 0;
+    for (const line of lines) for (let i = 0; i < line.length - 1; i++) {
+      const a = line[i], b = line[i + 1];
+      q.setFromEuler(new THREE.Euler(0, -Math.atan2(b.z - a.z, b.x - a.x), Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z)), 'YZX'));
+      m4.compose(pv.set((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.78, (a.z + b.z) / 2), q, sv.set(a.distanceTo(b), 1, 1)); rim.setMatrixAt(n++, m4);
+    }
+    rim.count = n; scene.add(rim);
   }
 
   // 절벽 면의 울퉁불퉁한 화강암 덩어리 (사진: 회색 바위 절벽)
@@ -3163,7 +3312,7 @@ export class World {
         else if (n.X > PIER_X) n.Z = -3.6;
         else {
           // 물가에서 가장 높은 바위 위 또는 물가 모래
-          n.Z = shoreZ(n.X) + 2.2;
+          n.Z = shoreBase(n.X) + 2.2;
           let best = null;
           for (const rt of this.rockTops) if (Math.abs(rt.X - n.X) < 8 && rt.Z > shoreZ(n.X) - 7 && (!best || rt.top > best.top)) best = rt;
           if (best && best.top < 3) { n.X = best.X; n.Z = best.Z; }
@@ -4039,6 +4188,7 @@ export class World {
       const dy = deckY(X);
       if (dy != null && Z >= DECK_Z0 && Z <= DECK_Z1 && dy > y - 0.4) { y = dy; kind = 'wood'; }
       if (X >= PIER_X - 0.5 && X <= PIER_X + PIER_LEN && Z >= -5.4 && Z <= 5) { y = PIER_TOP; kind = 'concrete'; }
+      if (MODE.east) { const zy = zigY(X, Z); if (zy != null && zy > y - 0.6) { y = Math.max(y, zy + 0.08); kind = 'concrete'; } }
       if (MODE.east && this.skywalk) { const sy = this.skywalkY(X, Z); if (sy != null) { y = sy; kind = 'steel'; } }
       const S = EAST_STAIR;
       if (MODE.east && S.top && Math.abs(Z - S.z) <= S.w / 2 + 0.1) {
@@ -4093,7 +4243,7 @@ export class World {
       if (X < 120) Z = 0;
       else if (X > PIER_X) Z = -1.5;
       else if (deckY(X) != null && X > LAY.deck0 && X < LAY.deck1 - 4) Z = -1.6;
-      else if (MODE.east && X > HEAD.w0 - 6 && X < HEAD.e1 + 6) Z = lerp(8, -24, headBump(X)); // 곶 위 마루
+      else if (MODE.east && headBump(X) > 0) Z = shoreBase(X) + 4; // 석호 앞 뭍의 해변
       else Z = shoreZ(X) + 4;
     }
     const surf = this.surfaceAt(X, Z);
