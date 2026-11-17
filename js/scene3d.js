@@ -16,7 +16,7 @@ function loadEastModels() {
     const L = new GLTFLoader();
     L.setMeshoptDecoder(MeshoptDecoder);
     const one = (n) => L.loadAsync(new URL(`../assets/models/east/${n}.glb`, import.meta.url).href).then((g) => g.scene);
-    const names = ['pavilion', 'pine', 'stairs', 'cliff_lo', 'rock_wall', 'rock_boulders', 'rock_arch', 'rock_stack'];
+    const names = ['pavilion', 'pine', 'headland', 'cliff_lo', 'rock_wall', 'rock_boulders', 'rock_arch', 'rock_stack'];
     eastModelsP = Promise.all(names.map(one)).then((list) => Object.fromEntries(names.map((n, i) => [n, list[i]])));
     eastModelsP.catch(() => { eastModelsP = null; });
   }
@@ -72,9 +72,11 @@ export function shoreZ(X) {
 }
 // 정자 구역 (환경 컨셉아트 기준): 해변 → 낮은 목(둑길) → 섬처럼 솟은 바위 → 정자
 const HEAD = { x: 394, len: 56, half: 27 };
-const ISLE = { x: 394, z: -41, r: 18, top: 9.5, neckX: 393, neckW: 5, stairX: 394 };
+// 치수는 Blender 에셋(tools/blender_headland.py)과 같다: 낮은 바위 언덕(6m), 완만히 오르는 목, 얕은 돌계단
+const ISLE = { x: 394, z: -40, r: 15, top: 6, neckX: 394, neckW: 3, stairX: 394 };
+const neckH = (Z) => 1.5 + 2.7 * clamp((-9 - Z) / 11); // 목 위 길 높이: 해변 1.5m → 계단 앞 4.2m
 const headBump = (X) => { const u = (X - HEAD.x) / HEAD.half; return Math.abs(u) >= 1 ? 0 : Math.sqrt(1 - u * u); };
-const neckProf = (X) => smooth(ISLE.neckW + 3, ISLE.neckW, Math.abs(X - ISLE.neckX));
+const neckProf = (X) => smooth(ISLE.neckW + 2.5, ISLE.neckW, Math.abs(X - ISLE.neckX));
 // 테두리 안쪽(뭍의 물가와 바깥 물가 사이)의 높이: 바위섬, 낮은 목, 섬으로 오르는 계단 자리, 얕은 석호
 function headInfo(X, Z) {
   if (!MODE.east) return null;
@@ -83,17 +85,17 @@ function headInfo(X, Z) {
   const zb = shoreBase(X);
   if (Z >= zb) return null;
   const d = Math.hypot(X - ISLE.x, Z - ISLE.z);
-  const Rn = ISLE.r + (vnoise(X * 0.25 + 3, Z * 0.25) - 0.5) * 3;
-  const t = smooth(Rn, Rn - 6, d);
+  const Rn = ISLE.r + (vnoise(X * 0.25 + 3, Z * 0.25) - 0.5) * 1.6;
+  const t = smooth(Rn, Rn - 4.5, d);
   const ledge = clamp(t + Math.sin(t * 18 + fbm(X * 0.3, Z * 0.3) * 6) * 0.035 * t * (1 - t) * 4);
   const hi = ISLE.top * ledge;
   const inNeck = Z > ISLE.z + 6;
   const np = inNeck ? neckProf(X) : 0;
-  let h = Math.max(hi, 1.5 * np);
+  let h = Math.max(hi, neckH(Z) * np);
   const ax = Math.abs(X - ISLE.stairX);
-  if (ax < 3.7 && Z < -20 && Z > -37) h = lerp(h, lerp(1.5, ISLE.top, clamp((-22.5 - Z) / 10.5)), smooth(3.7, 2.2, ax));
+  if (ax < 3.7 && Z < -18 && Z > -34) h = lerp(h, Z > -20 ? neckH(Z) : lerp(4.2, ISLE.top, clamp((-20 - Z) / 5.5)), smooth(3.7, 2.2, ax)); // 얕은 돌계단 자리
   if (h < 0.04) {
-    const dl = Math.min(d - Rn, inNeck ? Math.abs(X - ISLE.neckX) - (ISLE.neckW + 3) : 99);
+    const dl = Math.min(d - Rn, inNeck ? Math.abs(X - ISLE.neckX) - (ISLE.neckW + 2.5) : 99);
     // 바다 바닥은 뭍의 물가에서 멀어질수록 깊어지고(테두리와 무관하게 이어진다), 섬·목 가까이는 얕다
     const d0 = Z - zb, floor = d0 > -25 ? d0 * 0.07 : Math.max(-16, -1.75 + (d0 + 25) * 0.15);
     h = Math.min(-0.04, floor * smooth(0, 4, dl));
@@ -188,7 +190,7 @@ export function groundY(X) {
 }
 
 // 동해 절벽 정자 자리와 해변에서 올라가는 데크계단
-const EAST_PAV = { x: 394, z: -44 };
+const EAST_PAV = { x: 394, z: -41 };
 const EAST_STAIR = { x0: 360, x1: 403, z: 6, w: 2.2 };
 // 풀밭 해안 언덕길 (키 아트 14b): 계단 꼭대기 → 정자 뒤 → 언덕 위 풍차
 const HILL_PATH = [[417.5, 21], [417.5, 30], [418, 38], [422, 45], [427, 52]];
@@ -497,7 +499,7 @@ export class World {
             fo = Math.max(smooth(12, 20, dn), smooth(11, 18, df));
           }
           if (hi && hi.h > 0.2) { // 목은 몽돌, 섬 옆면은 바위, 섬 위는 풀
-            const up = smooth(8.3, 9.3, hi.h);
+            const up = smooth(5, 5.8, hi.h) * (hi.neck > 0.5 ? 0 : 1);
             wet = 0; peb = Math.max(peb, hi.neck); rk = Math.max(rk, smooth(1.6, 3.5, hi.h) * (1 - up * 0.75)); fo = up;
           }
           splat[i * 4] = wet; splat[i * 4 + 1] = peb; splat[i * 4 + 2] = fo; splat[i * 4 + 3] = rk;
@@ -508,7 +510,7 @@ export class World {
           if (hh2 > 2 || (dz > 24 && f < 1)) c.lerp(new THREE.Color(0.62, 0.8, 0.5), Math.max(smooth(2, 6, hh2), smooth(24, 34, dz) * (1 - f)) * 0.8);
           if (dz < 0) c.multiplyScalar(lerp(0.85, 0.45, smooth(0, 12, -dz)));
           const mk = meadowK(X, Z) * smooth(13, 16.5, dz) * smooth(2.5, 5, h); // 절벽 면과 해변은 풀색으로 칠하지 않는다
-          if (hi && hi.h > 6) c.lerp(new THREE.Color(0.6, 0.86, 0.42), smooth(8.3, 9.3, hi.h) * 0.8);
+          if (hi && hi.h > 4.6 && hi.neck < 0.5) c.lerp(new THREE.Color(0.6, 0.86, 0.42), smooth(5, 5.8, hi.h) * 0.8);
           if (mk > 0) c.lerp(new THREE.Color(0.62, 1.0, 0.36).multiplyScalar(0.9 + n * 0.2), mk * 0.85);
         }
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
@@ -1559,15 +1561,13 @@ export class World {
     const r = rng(57);
     // 소나무 숲 절벽 위 정자 (바다 쪽 흰 난간 테라스) + 해변에서 올라가는 데크계단
     this.oldPavilion = L.temple(EAST_PAV.x, EAST_PAV.z, 0.85);
-    this.colliders.push({ X: EAST_PAV.x, Z: EAST_PAV.z, r: 5.6 });
-    this.buildIsleStair();
+    this.colliders.push({ X: EAST_PAV.x, Z: EAST_PAV.z, r: 6.4 });
     this.placeEastModels();
     this.buildPinePath();
     this.buildEastCoast();
     this.buildCanola();
     this.buildParasols();
     this.buildHillPath();
-    this.buildHeadPath();
     // 갯바위 사이 청록 웅덩이 (바닷물이 고인 곳)
     const poolM = new THREE.MeshStandardMaterial({ color: '#3cb7b1', roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.88 });
     const floorM = new THREE.MeshStandardMaterial({ color: '#2f5f57', roughness: 0.9 });
@@ -2434,14 +2434,15 @@ export class World {
       };
       // 정자: 계단이 언덕길(서쪽)을 향하게
       {
-        const sc = 11, y = heightAt(EAST_PAV.x, EAST_PAV.z) + 0.15;
+        const sc = 13, y = heightAt(EAST_PAV.x, EAST_PAV.z) + 0.05;
+        M.pavilion.traverse((m) => { if (m.isMesh) m.material.color.setScalar(1.35); }); // 기와·단청이 어둡게 나오지 않게
         put(M.pavilion, EAST_PAV.x, y + 0.427 * sc - 0.9, EAST_PAV.z, sc, sc, sc, -Math.PI / 2); // 계단이 뭍 쪽(데크길)을 향한다
         if (this.oldPavilion) this.oldPavilion.visible = false;
       }
       // 화강암 절벽 덩어리: 절벽 면 앞에 세로로 키워 세운다 (데크길은 가리지 않게)
       this.dressHeadland(M, put, r);
       // 굽은 소나무: 정자 둘레와 절벽 끝
-      const pines = this.mobile ? [[384.5, -40], [403.5, -41], [388, -50.5], [421, 8]] : [[384.5, -40], [403.5, -41], [388, -50.5], [400.5, -50], [421, 8], [383, 27], [422, 31]];
+      const pines = this.mobile ? [[385.2, -40], [402.8, -40.5], [421, 8]] : [[385.2, -40], [402.8, -40.5], [421, 8], [383, 27], [422, 31]];
       pines.forEach(([X, Z]) => {
         const sc = 8.5 + r() * 2.5;
         put(M.pine, X, heightAt(X, Z) + 0.42 * sc - 0.9, Z, sc, sc, sc, r() * 6.28);
@@ -2482,22 +2483,16 @@ export class World {
       }
       i++;
     };
-    // 1) 섬 둘레 (목과 계단이 닿는 북쪽은 비운다)
-    const NI = this.mobile ? 7 : 11, a0 = Math.PI / 2 + 0.52, span = Math.PI * 2 - 1.04;
-    for (let k = 0; k < NI; k++) {
-      const a = a0 + span * (k + 0.5) / NI, ca = Math.cos(a), sa = Math.sin(a);
-      piece(ISLE.x + ca * ISLE.r, ISLE.z + sa * ISLE.r, -ca, -sa, -sa, ca, ISLE.top, 2.6);
+    // 1) 정자 바위 곶: Blender에서 만든 한 덩어리 에셋 (둥근 화강암 바위, 돌 축대, 데크길과 난간, 얕은 돌계단)
+    {
+      const o = put(M.headland, ISLE.x, 0, ISLE.z, 1, 1, 1, 0);
+      o.traverse((m) => { if (m.isMesh) { m.material.vertexColors = true; m.material.roughness = 0.92; m.material.color.setRGB(0.80, 0.63, 0.45); m.material.needsUpdate = true; } }); // 게임 조명에서 꿀빛 화강암으로
+      this.stampDepth(ISLE.x, ISLE.z, 19, 0.05);
     }
     // 2) 뭍의 절벽 앞 (지그재그 길 동쪽 ~ 갯바위)
     for (let X = 421; X <= 464; X += this.mobile ? 12.5 : 8.6) {
       const bz = shoreBase(X), full = heightAt(X, bz + 13);
       if (full >= 4) piece(X, bz, 0, 1, 1, 0, full, 2.4);
-    }
-    // 3) 목 양옆의 낮은 바위 (둑길을 받치는 돌)
-    for (const Z of this.mobile ? [-8, -17] : [-5, -10, -15, -20]) for (const sd of [-1, 1]) {
-      const s = 4 + r() * 2.2, X = ISLE.neckX + sd * (ISLE.neckW + 2.2 + r());
-      put(M.rock_boulders, X, -0.4 + 0.166 * s * 0.9, Z + (r() - 0.5) * 2, s, s * 0.9, s, r() * 6.28);
-      this.stampDepth(X, Z, s * 0.45, 0.05);
     }
     // 4) 앞바다 바위 기둥
     [[371, -50, 10], [419, -54, 9], [404, -67, 7.5], [430, -27, 10]].forEach(([X, Z, h]) => {
@@ -4220,6 +4215,11 @@ export class World {
       if (dx * dx + dz * dz < c.r * c.r) return false;
     }
     if (surf.kind === 'concrete' && Z < -4.7) return false; // 방파제 난간
+    if (MODE.east && Z < -4 && Math.abs(X - ISLE.x) < 20) {
+      const d = Math.hypot(X - ISLE.x, Z - ISLE.z);
+      if (Z > -30.5 && d > 10) { if (Math.abs(X - ISLE.stairX) > 1.6) return false; } // 목 위 데크길·돌계단의 난간
+      else if (d > 10.3 && d < 19) return false; // 정자 마당 둘레의 바위
+    }
     if (from.kind === 'wood' && surf.kind !== 'wood' && surf.kind !== 'steel' && Z < DECK_Z0 + 0.3) return false; // 데크 난간
     if (from.kind === 'steel' && surf.kind !== 'steel' && from.y - surf.y > 0.6) return false; // 철제 산책로 난간
     if (from.kind === 'wood' && surf.kind === 'wood' && Z < DECK_Z0 + 0.3) return false;
