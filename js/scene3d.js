@@ -6,6 +6,21 @@ import { loadHDR } from './assets.js';
 import { makeRealFish, flop, fishLook } from './fish3d.js';
 import { Landmarks } from './landmarks.js';
 import * as TX from './textures.js';
+import { GLTFLoader } from '../vendor/three/addons/GLTFLoader.js';
+import { MeshoptDecoder } from '../vendor/three/addons/libs/meshopt_decoder.module.js';
+
+// 동해 정자 구역의 3D 모델 (키 아트에서 만든 에셋). 한 번 받아 두고 다시 쓴다
+let eastModelsP = null;
+function loadEastModels() {
+  if (!eastModelsP) {
+    const L = new GLTFLoader();
+    L.setMeshoptDecoder(MeshoptDecoder);
+    const one = (n) => L.loadAsync(new URL(`../assets/models/east/${n}.glb`, import.meta.url).href).then((g) => g.scene);
+    eastModelsP = Promise.all(['pavilion', 'cliff', 'pine', 'stairs'].map(one)).then(([pavilion, cliff, pine, stairs]) => ({ pavilion, cliff, pine, stairs }));
+    eastModelsP.catch(() => { eastModelsP = null; });
+  }
+  return eastModelsP;
+}
 import { rng, smooth, lerp, clamp, skyAt, hashStr } from './scene.js';
 
 export const M = 0.06; // 게임 좌표(px) → 미터
@@ -69,7 +84,7 @@ function cliffH(X, Z) {
   if (MODE.east) {
     // 바위 절벽: 면이 들쭉날쭉(돌출부·틈)하고 층이 진 화강암
     const j = Math.max(-0.3, (fbm(X * 0.11, 3.7) - 0.5) * 5 + (vnoise(X * 0.45, Z * 0.45) - 0.5) * 1.6); // 데크길 쪽으로는 튀어나오지 않게
-    const t = smooth(5.6 + j, 10.5 + j * 0.6, dz);
+    const t = smooth(9.8 + j, 14.6 + j * 0.6, dz); // 데크길 뒤에 바위 절벽 모델이 설 자리를 남기고 물러난다
     const ledge = t + Math.sin(t * 18 + fbm(X * 0.3, Z * 0.3) * 6) * 0.035 * t * (1 - t) * 4;
     return k * cliffTop() * clamp(ledge) * (0.88 + fbm(X * 0.2, Z * 0.2) * 0.25);
   }
@@ -388,7 +403,7 @@ export class World {
           if (f > 0.3 && hh2 < 2) c.lerp(new THREE.Color(0.66, 0.5, 0.36), f * (1 - pathK * 0.7));
           if (hh2 > 2 || (dz > 24 && f < 1)) c.lerp(new THREE.Color(0.62, 0.8, 0.5), Math.max(smooth(2, 6, hh2), smooth(24, 34, dz) * (1 - f)) * 0.8);
           if (dz < 0) c.multiplyScalar(lerp(0.85, 0.45, smooth(0, 12, -dz)));
-          const mk = meadowK(X, Z);
+          const mk = meadowK(X, Z) * smooth(13, 16.5, dz); // 절벽 면은 풀색으로 칠하지 않는다
           if (mk > 0) c.lerp(new THREE.Color(0.62, 1.0, 0.36).multiplyScalar(0.9 + n * 0.2), mk * 0.85);
         }
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
@@ -753,7 +768,7 @@ export class World {
         // 절벽 위 소나무 숲 (정자 터와 데크계단은 비워 둔다)
         const CT = cliffTop();
         place(LAY.deck0 - 12, LAY.deck1 - 2, 2, 46, 3.6, (X, Z) => (cliffH(X, Z) > CT * 0.55 ? 0.92 : 0), 8, 14,
-          (X, Z) => (Math.abs(X - EAST_PAV.x) < 11 && Math.abs(Z - EAST_PAV.z) < 8) || (Z < EAST_STAIR.z + 3 && Z > EAST_STAIR.z - 3 && X < EAST_STAIR.x1 + 5) || Z - shoreZ(X) < 10.8 || meadowK(X, Z) > 0.35);
+          (X, Z) => (Math.abs(X - EAST_PAV.x) < 11 && Math.abs(Z - EAST_PAV.z) < 8) || (Z < EAST_STAIR.z + 3 && Z > EAST_STAIR.z - 3 && X < EAST_STAIR.x1 + 5) || Z - shoreZ(X) < 15 || meadowK(X, Z) > 0.35);
       } else {
         // 절벽 위 소나무 (데크길 뒤)
         place(LAY.deck0 + 6, LAY.deck1 - 6, 3, 40, 6, (X, Z) => (cliffH(X, Z) > 6 ? 0.7 : 0), 7, 12);
@@ -1438,9 +1453,10 @@ export class World {
     const L = this.landmarks || new Landmarks(scene, (X, Z) => heightAt(X, Z), this.assets);
     const r = rng(57);
     // 소나무 숲 절벽 위 정자 (바다 쪽 흰 난간 테라스) + 해변에서 올라가는 데크계단
-    L.temple(EAST_PAV.x, EAST_PAV.z, 0.85);
-    this.colliders.push({ X: EAST_PAV.x, Z: EAST_PAV.z, r: 5 });
+    this.oldPavilion = L.temple(EAST_PAV.x, EAST_PAV.z, 0.85);
+    this.colliders.push({ X: EAST_PAV.x, Z: EAST_PAV.z, r: 6.4 });
     this.buildCliffStair();
+    this.placeEastModels();
     this.buildPinePath();
     this.buildCliffRocks();
     this.buildEastCoast();
@@ -1951,6 +1967,7 @@ export class World {
 
   buildCliffStair() {
     const S = EAST_STAIR, scene = this.scene;
+    const firstStairObj = scene.children.length;
     S.bottom = heightAt(S.x0, S.z) + 0.12;
     let top = 0;
     for (let z = S.z - 2; z <= S.z + 2; z += 1) top = Math.max(top, heightAt(S.x1, z), heightAt(S.x1 + 2, z));
@@ -2011,6 +2028,7 @@ export class World {
         scene.add(sb);
       }
     }
+    this.stairParts = scene.children.slice(firstStairObj); // 모델 계단으로 바꿀 때 숨길 것들
     // 절벽 끝 흰 돌난간 (사진처럼 바다 쪽 가장자리를 따라)
     const white = new THREE.MeshStandardMaterial({ color: '#efeee8', roughness: 0.7 });
     const pts = [];
@@ -2237,6 +2255,61 @@ export class World {
     }
   }
 
+  // 키 아트에서 만든 3D 모델로 바꿔 끼우기: 정자, 화강암 절벽 덩어리, 굽은 소나무, 데크계단
+  // (모델을 받지 못하면 기존 도형이 그대로 남는다)
+  placeEastModels() {
+    const scene = this.scene, S = EAST_STAIR;
+    loadEastModels().then((M) => {
+      if (this.scene !== scene) return; // 그 사이 다른 장소로 옮겼다
+      const r = rng(909);
+      const put = (src, x, y, z, sx, sy, sz, rotY) => {
+        const o = src.clone();
+        o.position.set(x, y, z); o.scale.set(sx, sy, sz); o.rotation.y = rotY;
+        o.traverse((m) => {
+          if (!m.isMesh) return;
+          m.castShadow = m.receiveShadow = true;
+          // 돌·나무·기와가 금속처럼 번들거리지 않게
+          if (!m.material.userData.fixed) { m.material.metalness = 0; m.material.metalnessMap = null; m.material.roughness = Math.max(m.material.roughness, 0.85); m.material.userData.fixed = true; m.material.needsUpdate = true; }
+        });
+        scene.add(o);
+        return o;
+      };
+      // 정자: 계단이 언덕길(서쪽)을 향하게
+      {
+        const sc = 13, y = heightAt(EAST_PAV.x, EAST_PAV.z);
+        put(M.pavilion, EAST_PAV.x, y + 0.427 * sc - 0.9, EAST_PAV.z, sc, sc, sc, Math.PI);
+        if (this.oldPavilion) this.oldPavilion.visible = false;
+      }
+      // 화강암 절벽 덩어리: 절벽 면 앞에 세로로 키워 세운다 (데크길은 가리지 않게)
+      // 데크길 바로 뒤 땅에서 절벽 꼭대기 가까이까지 솟은 바위 절벽
+      M.cliff.traverse((m) => { if (m.isMesh) m.material.color.setScalar(1.3); });
+      // [X, 가로, 높이, 깊이, 방향, 뒤로 물린 거리]: 큰 덩어리 사이를 작은 덩어리로 메운다
+      [[411, 23, 43, 12, 0.2, 0], [422, 18, 37, 10, 2.1, 1.5], [432, 26, 46, 13, 3.3, 0], [442, 18, 38, 10, 5.0, 1.5], [451, 24, 42, 12, 0.9, 0], [462, 15, 27, 9, 2.4, 0.5], [404.5, 10, 34, 8, 4.1, 5.5]].forEach(([X, sx, sy, sz, rot, back]) => {
+        const Z = shoreZ(X) + 7.7 + 0.39 * sz + back;
+        put(M.cliff, X, 0.6 + 0.185 * sy, Z, sx, sy, sz, rot);
+      });
+      if (this.cliffRocksIM) this.cliffRocksIM.visible = false;
+      // 굽은 소나무: 정자 둘레와 절벽 끝
+      const pines = this.mobile ? [[414, 9], [436, 10], [441, 16], [416, 19]] : [[414, 9], [436, 10], [441, 16], [416, 19], [431, 22], [448, 10], [403, 14]];
+      pines.forEach(([X, Z]) => {
+        const sc = 8.5 + r() * 2.5;
+        put(M.pine, X, heightAt(X, Z) + 0.42 * sc - 0.9, Z, sc, sc, sc, r() * 6.28);
+        this.colliders.push({ X, Z, r: 0.9 });
+      });
+      // 데크계단: 모델 조각을 기존 계단 길을 따라 이어 붙인다 (걷는 높이는 그대로)
+      if (S.top) {
+        const N = 6, L = (S.x1 - S.x0) / N;
+        for (let i = 0; i < N; i++) {
+          const xa = S.x0 + i * L, xb = xa + L;
+          const ya = this.stairY(xa), yb = this.stairY(xb);
+          const sy = Math.max(2.4, (yb - ya) / 0.44);
+          put(M.stairs, (xa + xb) / 2, ya + 0.27 * sy, S.z, 5.9, sy, L * 1.04, -Math.PI / 2);
+        }
+        (this.stairParts || []).forEach((o) => { o.visible = false; });
+      }
+    }).catch(() => { /* 모델을 못 받으면 기존 모습 유지 */ });
+  }
+
   // 절벽 면의 울퉁불퉁한 화강암 덩어리 (사진: 회색 바위 절벽)
   buildCliffRocks() {
     const r = rng(23), S = EAST_STAIR;
@@ -2258,7 +2331,7 @@ export class World {
         // 절벽 높이의 아무 지점(아래~위 고르게)을 골라 그 면 위에 붙인다
         const want = (0.05 + r() * 0.85) * CT;
         let Z = shoreZ(X) + 5.2;
-        while (cliffH(X, Z) < want && Z < shoreZ(X) + 11) Z += 0.15;
+        while (cliffH(X, Z) < want && Z < shoreZ(X) + 15.5) Z += 0.15;
         if (Z < DECK_Z1 + 0.25) continue; // 데크길 판을 뚫지 않게
         if (Math.abs(Z - S.z) < S.w / 2 + 1.2 && X < S.x1 + 4) continue;
         const h = cliffH(X, Z);
@@ -2274,6 +2347,7 @@ export class World {
       }
     }
     im.instanceMatrix.needsUpdate = true;
+    this.cliffRocksIM = im;
     this.scene.add(im);
   }
 
