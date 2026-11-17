@@ -16,3 +16,4 @@
 - `assets/` — 3D 모델의 원본이 된 에셋 그림 (정자, 바위 절벽, 소나무, 데크계단)
 - 게임에서 쓰는 3D 모델은 `assets/models/east/` 에 있습니다.
 - `ascent/` — 언덕 오르는 길 4가지 안 (게임에는 ① 지그재그 돌길을 적용)
+- `video_shots/` — 환경영상 캡처와 Blender 미리보기 (정자 바위 곶의 기준). 에셋은 `tools/blender_headland.py`로 다시 만들 수 있습니다.
