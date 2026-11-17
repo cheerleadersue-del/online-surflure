@@ -127,6 +127,9 @@ export function groundY(X) {
 const EAST_PAV = { x: 424, z: 10 };
 const EAST_STAIR = { x0: 360, x1: 403, z: 6, w: 2.2 };
 const pinePathZ = (X) => 21 + Math.sin(X * 0.03) * 2;
+// 유채꽃밭: 해수욕장 뒤, 기찻길 양옆 (키 아트 전체 전경 기준)
+const CANOLA = { x0: 108, x1: 204, z1: 60 };
+const inCanola = (X, Z) => X > CANOLA.x0 - 4 && X < CANOLA.x1 + 4 && Z < CANOLA.z1 + 3;
 
 const C = (hex) => new THREE.Color(hex);
 const LINE_STYLE = {
@@ -719,11 +722,11 @@ export class World {
       place(40, PIER_X + PIER_LEN, -170, -50, 7.5, (X, Z) => (Z < farShore(X) - 16 ? 0.6 : 0), 9, 16);
     } else if (!MODE.sihwa) {
       // 해변 뒤 방풍림 (동해: 철길 위에는 심지 않는다)
-      const rail = MODE.east ? (X, Z) => Math.abs(Z - 40) < 5 : null;
+      const rail = MODE.east ? (X, Z) => Math.abs(Z - 40) < 5 || inCanola(X, Z) : null;
       place(40, LAY.deck0 - 30, 36, 90, 7.5, () => 0.55, 9, 15, rail);
       if (MODE.east) {
         // 해변 옆 소나무길: 모래사장 뒤로 키 큰 소나무가 줄지어 선 숲, 가운데 흙길
-        place(110, 372, 12, 35, 5, (X, Z) => (Z > shoreZ(X) + 22 ? 0.75 : 0), 10, 16, (X, Z) => Math.abs(Z - pinePathZ(X)) < 2.2);
+        place(110, 372, 12, 35, 5, (X, Z) => (Z > shoreZ(X) + 22 ? 0.75 : 0), 10, 16, (X, Z) => Math.abs(Z - pinePathZ(X)) < 2.2 || inCanola(X, Z));
         // 절벽 위 소나무 숲 (정자 터와 데크계단은 비워 둔다)
         const CT = cliffTop();
         place(LAY.deck0 - 12, LAY.deck1 - 2, 2, 46, 3.6, (X, Z) => (cliffH(X, Z) > CT * 0.55 ? 0.92 : 0), 8, 14,
@@ -1023,6 +1026,7 @@ export class World {
     const stone = new THREE.SphereGeometry(1, 10, 8);
     const T = this.assets && this.assets.tex.rock;
     const sm = new THREE.MeshStandardMaterial(T ? { map: T.map, normalMap: T.normal, roughness: 0.55 } : { roughness: 0.55 });
+    if (MODE.east) { sm.roughness = 0.16; sm.normalScale.set(0.25, 0.25); sm.envMapIntensity = 1.4; }
     const stones = new THREE.InstancedMesh(stone, sm, 1800);
     stones.receiveShadow = stones.castShadow = true;
     stones.count = 0;
@@ -1030,13 +1034,15 @@ export class World {
       const X = LAY.peb0 + r() * (LAY.deck0 - LAY.peb0 - 4);
       const dz = -2 + r() * 18;
       const Z = shoreZ(X) + dz;
-      const sc = 0.08 + r() * r() * 0.28;
+      const sc = MODE.east ? 0.13 + r() * r() * 0.42 : 0.08 + r() * r() * 0.28;
       q.setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3));
       sv.set(sc * (1.2 + r() * 0.5), sc * 0.55, sc);
       m4.compose(pv.set(X, heightAt(X, Z) + sc * 0.25, Z), q, sv);
       stones.setMatrixAt(stones.count, m4);
       const g = 0.35 + r() * 0.5;
       tint.setRGB(g * (0.95 + r() * 0.15), g * (0.92 + r() * 0.1), g * (0.9 + r() * 0.12));
+      // 동해: 물에 젖어 윤이 나는 검은 몽돌 (가끔 갈색·회색)
+      if (MODE.east) { const k = r(); const d = 0.16 + r() * 0.2; if (k < 0.12) tint.setRGB(d * 2.6, d * 1.7, d * 1.0); else if (k < 0.24) tint.setRGB(d * 2.2, d * 2.2, d * 2.3); else tint.setRGB(d, d * 1.02, d * 1.1); }
       stones.setColorAt(stones.count, tint);
       stones.count++;
     }
@@ -1415,8 +1421,8 @@ export class World {
     this.buildPinePath();
     this.buildCliffRocks();
     this.buildEastCoast();
-    // 앞바다 바위섬의 빨간 등대
-    L.lighthouse(250, -330, '#d0302b');
+    this.buildCanola();
+    this.buildParasols();
     // 갯바위 사이 청록 웅덩이 (바닷물이 고인 곳)
     const poolM = new THREE.MeshStandardMaterial({ color: '#3cb7b1', roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.88 });
     const floorM = new THREE.MeshStandardMaterial({ color: '#2f5f57', roughness: 0.9 });
@@ -1547,8 +1553,8 @@ export class World {
         g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...d)));
         legs.push(g.toNonIndexed());
       });
-      const BX0 = 600, BX1 = 700, BZ = -62;
-      const tet = new THREE.InstancedMesh(mergeGeos(legs), new THREE.MeshStandardMaterial({ color: '#d2d0c8', roughness: 0.95 }), 260);
+      const BX0 = 600, BX1 = 652, BZ = -62;
+      const tet = new THREE.InstancedMesh(mergeGeos(legs), new THREE.MeshStandardMaterial({ color: '#d2d0c8', roughness: 0.95 }), 380);
       tet.castShadow = tet.receiveShadow = true; tet.count = 0;
       for (let X = BX0; X < BX1; X += 2.1) {
         for (let row = 0; row < 4; row++) {
@@ -1561,6 +1567,32 @@ export class World {
       }
       tet.instanceMatrix.needsUpdate = true;
       scene.add(tet);
+      // 방파제를 육지와 잇는 팔: 항구 방파제 끝에서 바다 쪽 방파제까지 (테트라포드·등대가 바다에 따로 떠 있지 않게)
+      {
+        const AX = PIER_X + PIER_LEN + 3, z0 = -5, z1 = BZ + 2.8, conc = new THREE.MeshStandardMaterial({ color: '#a9a7a0', roughness: 0.92 });
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(6.5, 6, z0 - z1), conc);
+        arm.position.set(AX, PIER_TOP - 3, (z0 + z1) / 2);
+        arm.castShadow = arm.receiveShadow = true;
+        scene.add(arm);
+        const joint = new THREE.Mesh(new THREE.BoxGeometry(9, 6, 11), conc);
+        joint.position.set(PIER_X + PIER_LEN + 1.5, PIER_TOP - 3, -0.3);
+        scene.add(joint);
+        const para = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, z0 - z1), conc);
+        para.position.set(AX + 2.9, PIER_TOP + 0.45, (z0 + z1) / 2);
+        scene.add(para);
+        for (let Z = z0; Z > z1; Z -= 2.1) {
+          for (let row = 0; row < 3; row++) {
+            if (tet.count >= 380) break;
+            q.setFromEuler(new THREE.Euler(r() * 6, r() * 6, r() * 6));
+            m4.compose(pv.set(AX + 4.6 + row * 2 + (r() - 0.5), -0.9 + (row === 0 ? 1.1 : row === 1 ? 0.3 : -0.5) + r() * 0.6, Z + (r() - 0.5)), q, sv.setScalar(1.15));
+            tet.setMatrixAt(tet.count++, m4);
+          }
+          this.stampDepth(AX + 4, Z, 6, 0.05);
+        }
+        tet.instanceMatrix.needsUpdate = true;
+        // 방파제 안쪽 작은 어항에 매어 둔 배
+        [[612, -22, 0.4], [624, -34, 2.2], [606, -40, -0.8]].forEach(([x, z, rot]) => { const b = makeBoat(); b.position.set(x, 0, z); b.rotation.y = rot; b.scale.setScalar(0.8); scene.add(b); (this.harborBoats = this.harborBoats || []).push(b); });
+      }
       const crown = new THREE.Mesh(new THREE.BoxGeometry(BX1 - BX0, 1.4, 2.4), new THREE.MeshStandardMaterial({ color: '#e6e3da', roughness: 0.9 }));
       crown.position.set((BX0 + BX1) / 2, 1.9, BZ + 1.6);
       crown.castShadow = crown.receiveShadow = true;
@@ -1704,8 +1736,8 @@ export class World {
         q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.3, r() * 6, (r() - 0.5) * 0.3));
         m4.compose(pv.set(x, y, z), q, sv.set(sx, sy, sz));
         im.setMatrixAt(im.count, m4);
-        const g = 0.45 + r() * 0.45;
-        im.setColorAt(im.count, col.setRGB(g, g * 0.97, g * 0.94));
+        const g = 0.2 + r() * 0.3; // 몽돌해변과 같은 짙은 돌
+        im.setColorAt(im.count, col.setRGB(g, g * 1.0, g * 1.06));
         im.count++;
       };
       this.cairns = [];
@@ -1975,6 +2007,69 @@ export class World {
       bar.lookAt(b.x, (a.y + b.y) / 2 + 1.05, b.z);
       bar.rotateY(Math.PI / 2);
       scene.add(bar);
+    }
+  }
+
+  // 유채꽃밭 (해수욕장 뒤 ~ 기찻길 양옆): 초록 줄기 + 노란 꽃송이, 사이로 소나무길이 지나간다
+  buildCanola() {
+    const r = rng(404);
+    const stem = new THREE.CylinderGeometry(0.02, 0.03, 1, 3); stem.translate(0, 0.5, 0);
+    const leaf = new THREE.ConeGeometry(0.11, 0.5, 4); leaf.translate(0, 0.3, 0);
+    const top = new THREE.IcosahedronGeometry(0.12, 0); top.scale(1, 1.6, 1); top.translate(0, 1.05, 0);
+    const top2 = new THREE.IcosahedronGeometry(0.09, 0); top2.translate(0.13, 0.86, 0.06);
+    const top3 = new THREE.IcosahedronGeometry(0.08, 0); top3.translate(-0.11, 0.78, -0.09);
+    const paint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3), col = new THREE.Color(c); for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g.toNonIndexed(); };
+    const parts = [paint(stem, '#5f8f3a'), paint(leaf, '#6fa040'), paint(top, '#ffd91f'), paint(top2, '#ffe75a'), paint(top3, '#ffcf12')];
+    const geo = mergeGeos(parts);
+    {
+      const ca = new Float32Array(geo.attributes.position.count * 3); let o = 0;
+      parts.forEach((g) => { ca.set(g.attributes.color.array, o); o += g.attributes.color.array.length; });
+      geo.setAttribute('color', new THREE.BufferAttribute(ca, 3));
+    }
+    const N = this.mobile ? 7000 : 16000;
+    const im = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }), N);
+    im.count = 0; im.receiveShadow = true;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), col = new THREE.Color();
+    let guard = 0;
+    while (im.count < N && guard++ < N * 4) {
+      const X = CANOLA.x0 + r() * (CANOLA.x1 - CANOLA.x0), Z = 8 + r() * (CANOLA.z1 - 8);
+      if (Z < shoreZ(X) + 21 || Math.abs(Z - 40) < 3.2 || Math.abs(Z - pinePathZ(X)) < 1.9) continue;
+      const edge = Math.min(1, (X - CANOLA.x0) / 6, (CANOLA.x1 - X) / 6);
+      if (r() > edge + 0.15) continue;
+      const h = 0.6 + r() * 0.45;
+      q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.2, r() * 6, (r() - 0.5) * 0.2));
+      m4.compose(pv.set(X, heightAt(X, Z) - 0.03, Z), q, sv.set(h * (0.9 + r() * 0.5), h, h * (0.9 + r() * 0.5)));
+      im.setMatrixAt(im.count, m4);
+      const k = 0.88 + r() * 0.2;
+      im.setColorAt(im.count, col.setRGB(k, k, k * (0.9 + r() * 0.1)));
+      im.count++;
+    }
+    im.instanceMatrix.needsUpdate = true;
+    this.scene.add(im);
+    this.canola = im;
+  }
+
+  // 해수욕장의 짚 파라솔과 비치 의자
+  buildParasols() {
+    const r = rng(88), scene = this.scene;
+    const straw = new THREE.MeshStandardMaterial({ color: '#d9b96a', roughness: 1, flatShading: true });
+    const pole = new THREE.MeshStandardMaterial({ color: '#8a6a45', roughness: 0.9 });
+    const cols = ['#e2574c', '#2f9fb0', '#f2c94c', '#f6f1e4'];
+    for (let i = 0; i < 9; i++) {
+      const X = 186 + i * 13 + r() * 5, Z = shoreZ(X) + 10 + r() * 7;
+      const y = heightAt(X, Z);
+      const g = new THREE.Group();
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.4, 6), pole); p.position.y = 1.2;
+      const top = new THREE.Mesh(new THREE.ConeGeometry(1.7, 0.75, 12), i % 3 === 2 ? new THREE.MeshStandardMaterial({ color: cols[i % 4], roughness: 0.8, flatShading: true }) : straw); top.position.y = 2.5;
+      const skirt = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.75, 0.22, 12, 1, true), top.material); skirt.position.y = 2.05; skirt.material.side = THREE.DoubleSide;
+      g.add(p, top, skirt);
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 1.7), new THREE.MeshStandardMaterial({ color: cols[(i + 1) % 4], roughness: 0.8 }));
+      bed.position.set(0.9, 0.3, 0.2); bed.rotation.x = -0.12;
+      g.add(bed);
+      g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      g.position.set(X, y, Z); g.rotation.y = r() * 0.6 - 0.3;
+      scene.add(g);
+      this.colliders.push({ X, Z, r: 0.35 });
     }
   }
 
